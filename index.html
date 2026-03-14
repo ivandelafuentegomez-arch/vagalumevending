@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+te voy facilitar el codigo de mi programa y solo necesito que me deje modificar siempre la fecha de caducidad: <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -35,7 +35,39 @@
             useEffect(() => {
                 const saved = localStorage.getItem('vending-machines');
                 if (saved) {
-                    setMachines(JSON.parse(saved));
+                    const loadedMachines = JSON.parse(saved);
+                    // Migrar productos antiguos al nuevo formato de lotes
+                    const migratedMachines = loadedMachines.map(machine => {
+                        if (machine.type === 'vending') {
+                            return {
+                                ...machine,
+                                products: machine.products.map(product => {
+                                    // Si el producto ya tiene batches, dejarlo como está
+                                    if (product.batches) {
+                                        return product;
+                                    }
+                                    // Si es formato antiguo, migrar a batches
+                                    return {
+                                        ...product,
+                                        batches: [{
+                                            id: Date.now().toString() + Math.random(),
+                                            quantity: product.quantity || 0,
+                                            expiryDate: product.expiryDate || '',
+                                            cost: product.cost || 0
+                                        }],
+                                        // Mantener quantity para compatibilidad (será la suma de todos los lotes)
+                                        quantity: product.quantity || 0,
+                                        // Mantener expiryDate y cost como valores por defecto
+                                        expiryDate: product.expiryDate || '',
+                                        cost: product.cost || 0
+                                    };
+                                })
+                            };
+                        }
+                        return machine;
+                    });
+                    setMachines(migratedMachines);
+                    localStorage.setItem('vending-machines', JSON.stringify(migratedMachines));
                 }
             }, []);
 
@@ -86,7 +118,13 @@
                             quantity: parseFloat(quantity),
                             expiryDate,
                             cost: parseFloat(cost),
-                            price: parseFloat(price)
+                            price: parseFloat(price),
+                            batches: [{
+                                id: Date.now().toString() + '_batch_0',
+                                quantity: parseFloat(quantity),
+                                expiryDate,
+                                cost: parseFloat(cost)
+                            }]
                         };
                         return { ...m, products: [...m.products, newProduct] };
                     }
@@ -148,14 +186,35 @@
                 setSelectedMachine(updatedMachines.find(m => m.id === selectedMachine.id));
             };
 
-            const addStock = (productId, amount) => {
+            const addStock = (productId, amount, expiryDate, cost) => {
                 const updatedMachines = machines.map(m => {
                     if (m.id === selectedMachine.id) {
                         return {
                             ...m,
-                            products: m.products.map(p => 
-                                p.id === productId ? { ...p, quantity: p.quantity + parseFloat(amount) } : p
-                            )
+                            products: m.products.map(p => {
+                                if (p.id === productId) {
+                                    // Solo para máquinas de vending, usar sistema de lotes
+                                    if (m.type === 'vending') {
+                                        const newBatch = {
+                                            id: Date.now().toString() + Math.random(),
+                                            quantity: parseFloat(amount),
+                                            expiryDate: expiryDate || p.expiryDate,
+                                            cost: parseFloat(cost) || p.cost
+                                        };
+                                        const batches = [...(p.batches || []), newBatch];
+                                        const totalQuantity = batches.reduce((sum, b) => sum + b.quantity, 0);
+                                        return { 
+                                            ...p, 
+                                            batches,
+                                            quantity: totalQuantity,
+                                            cost: parseFloat(cost) || p.cost
+                                        };
+                                    }
+                                    // Para máquinas de café, mantener el comportamiento original
+                                    return { ...p, quantity: p.quantity + parseFloat(amount) };
+                                }
+                                return p;
+                            })
                         };
                     }
                     return m;
@@ -189,6 +248,59 @@
                     if (m.id === selectedMachine.id) {
                         const product = m.products.find(p => p.id === productId);
                         if (product && product.quantity >= quantitySold) {
+                            // Para máquinas de vending, usar FIFO con lotes
+                            if (m.type === 'vending' && product.batches) {
+                                let remaining = quantitySold;
+                                const updatedBatches = [];
+                                
+                                // Ordenar lotes por fecha de caducidad (más antiguo primero - FIFO)
+                                const sortedBatches = [...product.batches].sort((a, b) => {
+                                    if (!a.expiryDate) return 1;
+                                    if (!b.expiryDate) return -1;
+                                    return new Date(a.expiryDate) - new Date(b.expiryDate);
+                                });
+                                
+                                // Restar del lote más antiguo primero
+                                for (const batch of sortedBatches) {
+                                    if (remaining <= 0) {
+                                        updatedBatches.push(batch);
+                                    } else if (batch.quantity <= remaining) {
+                                        remaining -= batch.quantity;
+                                        // No añadir este lote (se vendió completamente)
+                                    } else {
+                                        updatedBatches.push({
+                                            ...batch,
+                                            quantity: batch.quantity - remaining
+                                        });
+                                        remaining = 0;
+                                    }
+                                }
+                                
+                                const totalQuantity = updatedBatches.reduce((sum, b) => sum + b.quantity, 0);
+                                
+                                const sale = {
+                                    id: Date.now().toString(),
+                                    productName: product.name,
+                                    quantity: quantitySold,
+                                    revenue: product.price * quantitySold,
+                                    profit: (product.price - product.cost) * quantitySold,
+                                    date: new Date().toISOString()
+                                };
+                                
+                                return {
+                                    ...m,
+                                    products: m.products.map(p => 
+                                        p.id === productId ? { 
+                                            ...p, 
+                                            batches: updatedBatches,
+                                            quantity: totalQuantity 
+                                        } : p
+                                    ),
+                                    sales: [...(m.sales || []), sale]
+                                };
+                            }
+                            
+                            // Para máquinas de café, mantener comportamiento original
                             const sale = {
                                 id: Date.now().toString(),
                                 productName: product.name,
@@ -235,7 +347,7 @@
                 setShowCoffeeSalesModal(false);
             };
 
-            const removeExpired = (productId, quantityExpired) => {
+            const removeExpired = (productId, quantityExpired, batchId = null) => {
                 const updatedMachines = machines.map(m => {
                     if (m.id === selectedMachine.id) {
                         const product = m.products.find(p => p.id === productId);
@@ -247,6 +359,40 @@
                                 date: new Date().toISOString()
                             };
 
+                            // Para máquinas de vending con lotes
+                            if (m.type === 'vending' && product.batches && batchId) {
+                                const updatedBatches = product.batches.map(batch => {
+                                    if (batch.id === batchId) {
+                                        const newQuantity = batch.quantity - quantityExpired;
+                                        return newQuantity > 0 ? { ...batch, quantity: newQuantity } : null;
+                                    }
+                                    return batch;
+                                }).filter(b => b !== null);
+                                
+                                const totalQuantity = updatedBatches.reduce((sum, b) => sum + b.quantity, 0);
+                                
+                                if (updatedBatches.length === 0) {
+                                    return { 
+                                        ...m, 
+                                        products: m.products.filter(p => p.id !== productId),
+                                        expired: [...(m.expired || []), expiredRecord]
+                                    };
+                                }
+                                
+                                return {
+                                    ...m,
+                                    products: m.products.map(p =>
+                                        p.id === productId ? { 
+                                            ...p, 
+                                            batches: updatedBatches,
+                                            quantity: totalQuantity 
+                                        } : p
+                                    ),
+                                    expired: [...(m.expired || []), expiredRecord]
+                                };
+                            }
+
+                            // Para máquinas de café o comportamiento antiguo
                             const newQuantity = product.quantity - quantityExpired;
                             if (newQuantity <= 0) {
                                 return { 
@@ -264,6 +410,74 @@
                                 };
                             }
                         }
+                    }
+                    return m;
+                });
+                saveData(updatedMachines);
+                setSelectedMachine(updatedMachines.find(m => m.id === selectedMachine.id));
+            };
+
+            const updateBatchQuantity = (productId, batchId, newQuantity) => {
+                const updatedMachines = machines.map(m => {
+                    if (m.id === selectedMachine.id) {
+                        return {
+                            ...m,
+                            products: m.products.map(p => {
+                                if (p.id === productId && p.batches) {
+                                    const updatedBatches = p.batches.map(b =>
+                                        b.id === batchId ? { ...b, quantity: parseFloat(newQuantity) || 0 } : b
+                                    );
+                                    const totalQuantity = updatedBatches.reduce((sum, b) => sum + b.quantity, 0);
+                                    return { ...p, batches: updatedBatches, quantity: totalQuantity };
+                                }
+                                return p;
+                            })
+                        };
+                    }
+                    return m;
+                });
+                saveData(updatedMachines);
+                setSelectedMachine(updatedMachines.find(m => m.id === selectedMachine.id));
+            };
+
+            const updateBatchExpiry = (productId, batchId, newExpiry) => {
+                const updatedMachines = machines.map(m => {
+                    if (m.id === selectedMachine.id) {
+                        return {
+                            ...m,
+                            products: m.products.map(p => {
+                                if (p.id === productId && p.batches) {
+                                    return {
+                                        ...p,
+                                        batches: p.batches.map(b =>
+                                            b.id === batchId ? { ...b, expiryDate: newExpiry } : b
+                                        )
+                                    };
+                                }
+                                return p;
+                            })
+                        };
+                    }
+                    return m;
+                });
+                saveData(updatedMachines);
+                setSelectedMachine(updatedMachines.find(m => m.id === selectedMachine.id));
+            };
+
+            const deleteBatch = (productId, batchId) => {
+                const updatedMachines = machines.map(m => {
+                    if (m.id === selectedMachine.id) {
+                        return {
+                            ...m,
+                            products: m.products.map(p => {
+                                if (p.id === productId && p.batches) {
+                                    const updatedBatches = p.batches.filter(b => b.id !== batchId);
+                                    const totalQuantity = updatedBatches.reduce((sum, b) => sum + b.quantity, 0);
+                                    return { ...p, batches: updatedBatches, quantity: totalQuantity };
+                                }
+                                return p;
+                            }).filter(p => !p.batches || p.batches.length > 0)
+                        };
                     }
                     return m;
                 });
@@ -881,10 +1095,25 @@ ${(selectedMachine.expired||[]).slice(-10).reverse().map(e=>`<tr><td>${new Date(
                                     if (!isCoffee) {
                                         lowStockCount = machine.products.filter(p => p.quantity < 5).length;
                                         const today = new Date();
+                                        // Contar productos con lotes que caducan pronto
                                         expiringCount = machine.products.filter(p => {
-                                            const expiry = new Date(p.expiryDate);
-                                            const daysUntil = Math.ceil((expiry - today) / (1000 * 60 * 60 * 24));
-                                            return daysUntil >= 0 && daysUntil <= 7;
+                                            if (p.batches && p.batches.length > 0) {
+                                                return p.batches.some(batch => {
+                                                    if (batch.expiryDate) {
+                                                        const expiry = new Date(batch.expiryDate);
+                                                        const daysUntil = Math.ceil((expiry - today) / (1000 * 60 * 60 * 24));
+                                                        return daysUntil >= 0 && daysUntil <= 7;
+                                                    }
+                                                    return false;
+                                                });
+                                            }
+                                            // Compatibilidad con formato antiguo
+                                            if (p.expiryDate) {
+                                                const expiry = new Date(p.expiryDate);
+                                                const daysUntil = Math.ceil((expiry - today) / (1000 * 60 * 60 * 24));
+                                                return daysUntil >= 0 && daysUntil <= 7;
+                                            }
+                                            return false;
                                         }).length;
                                     } else {
                                         lowStockCount = machine.products.filter(p => p.quantity < 1).length;
@@ -1085,27 +1314,38 @@ ${(selectedMachine.expired||[]).slice(-10).reverse().map(e=>`<tr><td>${new Date(
                                         ) : (
                                             selectedMachine.products.map(product => {
                                                 const today = new Date();
-                                                const expiry = new Date(product.expiryDate);
-                                                const daysUntilExpiry = Math.ceil((expiry - today) / (1000 * 60 * 60 * 24));
-                                                const isExpired = product.expiryDate && daysUntilExpiry < 0;
-                                                const isExpiringSoon = product.expiryDate && daysUntilExpiry >= 0 && daysUntilExpiry <= 7;
+                                                const batches = product.batches || [];
+                                                
+                                                // Calcular alertas considerando todos los lotes
+                                                let hasExpiredBatch = false;
+                                                let hasExpiringSoonBatch = false;
+                                                
+                                                batches.forEach(batch => {
+                                                    if (batch.expiryDate) {
+                                                        const expiry = new Date(batch.expiryDate);
+                                                        const daysUntil = Math.ceil((expiry - today) / (1000 * 60 * 60 * 24));
+                                                        if (daysUntil < 0) hasExpiredBatch = true;
+                                                        if (daysUntil >= 0 && daysUntil <= 7) hasExpiringSoonBatch = true;
+                                                    }
+                                                });
+                                                
                                                 const isLowStock = product.quantity < 5;
 
                                                 return (
                                                     <div 
                                                         key={product.id} 
                                                         className={`bg-white p-4 rounded-xl shadow-lg border-2 ${
-                                                            isExpired ? 'border-red-500 bg-red-50' : 
-                                                            isExpiringSoon ? 'border-orange-400 bg-orange-50' :
+                                                            hasExpiredBatch ? 'border-red-500 bg-red-50' : 
+                                                            hasExpiringSoonBatch ? 'border-orange-400 bg-orange-50' :
                                                             isLowStock ? 'border-yellow-400 bg-yellow-50' : 'border-gray-200'
                                                         }`}
                                                     >
                                                         <div className="flex justify-between items-start mb-3">
                                                             <div className="flex-1">
                                                                 <h4 className="font-bold text-lg">{product.name}</h4>
-                                                                <div className="flex gap-2 mt-1">
-                                                                    {isExpired && <span className="text-xs bg-red-600 text-white px-2 py-1 rounded-full font-semibold">⚠️ CADUCADO</span>}
-                                                                    {isExpiringSoon && !isExpired && <span className="text-xs bg-orange-500 text-white px-2 py-1 rounded-full font-semibold">⏰ Caduca en {daysUntilExpiry}d</span>}
+                                                                <div className="flex gap-2 mt-1 flex-wrap">
+                                                                    {hasExpiredBatch && <span className="text-xs bg-red-600 text-white px-2 py-1 rounded-full font-semibold">⚠️ LOTES CADUCADOS</span>}
+                                                                    {hasExpiringSoonBatch && !hasExpiredBatch && <span className="text-xs bg-orange-500 text-white px-2 py-1 rounded-full font-semibold">⏰ Lotes por caducar</span>}
                                                                     {isLowStock && <span className="text-xs bg-yellow-600 text-white px-2 py-1 rounded-full font-semibold">📦 Stock bajo</span>}
                                                                 </div>
                                                             </div>
@@ -1117,67 +1357,132 @@ ${(selectedMachine.expired||[]).slice(-10).reverse().map(e=>`<tr><td>${new Date(
                                                             </button>
                                                         </div>
 
-                                                        <div className="grid grid-cols-2 gap-2 mb-3">
-                                                            <div className="bg-white p-2 rounded-lg border">
-                                                                <p className="text-xs text-gray-600 mb-1">Stock actual</p>
-                                                                <input
-                                                                    type="number"
-                                                                    step="1"
-                                                                    value={product.quantity}
-                                                                    onChange={(e) => quickUpdateProduct(product.id, 'quantity', e.target.value)}
-                                                                    className="w-full text-2xl font-bold text-center border-2 border-blue-300 rounded-lg p-1"
-                                                                />
-                                                            </div>
-                                                            <div className="bg-white p-2 rounded-lg border">
-                                                                <p className="text-xs text-gray-600 mb-1">Coste</p>
-                                                                <input
-                                                                    type="number"
-                                                                    step="0.01"
-                                                                    value={product.cost || 0}
-                                                                    onChange={(e) => quickUpdateProduct(product.id, 'cost', e.target.value)}
-                                                                    className="w-full text-2xl font-bold text-center border-2 border-green-300 rounded-lg p-1"
-                                                                />
+                                                        <div className="bg-blue-50 p-3 rounded-lg mb-3 border border-blue-200">
+                                                            <p className="text-xs text-gray-600 mb-1">Stock Total</p>
+                                                            <p className="text-3xl font-bold text-blue-700">{product.quantity} uds</p>
+                                                            <p className="text-xs text-gray-600 mt-1">Precio de venta: {product.price.toFixed(2)}€</p>
+                                                        </div>
+
+                                                        <div className="mb-3">
+                                                            <h5 className="font-bold text-sm mb-2 text-gray-700">📦 Lotes ({batches.length})</h5>
+                                                            <div className="space-y-2 max-h-64 overflow-y-auto">
+                                                                {batches.map((batch, index) => {
+                                                                    const batchExpiry = batch.expiryDate ? new Date(batch.expiryDate) : null;
+                                                                    const daysUntilExpiry = batchExpiry ? Math.ceil((batchExpiry - today) / (1000 * 60 * 60 * 24)) : null;
+                                                                    const batchExpired = daysUntilExpiry !== null && daysUntilExpiry < 0;
+                                                                    const batchExpiringSoon = daysUntilExpiry !== null && daysUntilExpiry >= 0 && daysUntilExpiry <= 7;
+                                                                    
+                                                                    return (
+                                                                        <div key={batch.id} className={`p-2 rounded-lg border ${
+                                                                            batchExpired ? 'bg-red-100 border-red-400' :
+                                                                            batchExpiringSoon ? 'bg-orange-100 border-orange-400' :
+                                                                            'bg-gray-50 border-gray-300'
+                                                                        }`}>
+                                                                            <div className="flex justify-between items-center mb-2">
+                                                                                <span className="text-xs font-semibold text-gray-700">Lote #{index + 1}</span>
+                                                                                <button
+                                                                                    onClick={() => {
+                                                                                        if (confirm('¿Eliminar este lote?')) {
+                                                                                            deleteBatch(product.id, batch.id);
+                                                                                        }
+                                                                                    }}
+                                                                                    className="text-red-500 text-sm"
+                                                                                >
+                                                                                    🗑️
+                                                                                </button>
+                                                                            </div>
+                                                                            <div className="grid grid-cols-2 gap-2 mb-2">
+                                                                                <div>
+                                                                                    <label className="text-xs text-gray-600">Cantidad</label>
+                                                                                    <input
+                                                                                        type="number"
+                                                                                        step="1"
+                                                                                        value={batch.quantity}
+                                                                                        onChange={(e) => updateBatchQuantity(product.id, batch.id, e.target.value)}
+                                                                                        className="w-full text-sm font-bold text-center border-2 border-blue-300 rounded p-1"
+                                                                                    />
+                                                                                </div>
+                                                                                <div>
+                                                                                    <label className="text-xs text-gray-600">Coste</label>
+                                                                                    <input
+                                                                                        type="number"
+                                                                                        step="0.01"
+                                                                                        value={batch.cost || 0}
+                                                                                        readOnly
+                                                                                        className="w-full text-sm font-bold text-center border-2 border-gray-300 rounded p-1 bg-gray-100"
+                                                                                    />
+                                                                                </div>
+                                                                            </div>
+                                                                            <div>
+                                                                                <label className="text-xs text-gray-600">Fecha de caducidad</label>
+                                                                                <input
+                                                                                    type="date"
+                                                                                    value={batch.expiryDate || ''}
+                                                                                    onChange={(e) => updateBatchExpiry(product.id, batch.id, e.target.value)}
+                                                                                    className="w-full text-xs border-2 border-purple-300 rounded p-1"
+                                                                                />
+                                                                                {daysUntilExpiry !== null && (
+                                                                                    <p className={`text-xs mt-1 font-semibold ${
+                                                                                        batchExpired ? 'text-red-600' :
+                                                                                        batchExpiringSoon ? 'text-orange-600' :
+                                                                                        'text-green-600'
+                                                                                    }`}>
+                                                                                        {batchExpired ? `⚠️ Caducado hace ${Math.abs(daysUntilExpiry)} días` :
+                                                                                         batchExpiringSoon ? `⏰ Caduca en ${daysUntilExpiry} días` :
+                                                                                         `✅ Caduca en ${daysUntilExpiry} días`}
+                                                                                    </p>
+                                                                                )}
+                                                                            </div>
+                                                                            <button
+                                                                                onClick={() => {
+                                                                                    const qty = prompt(`¿Cuántas unidades retirar del lote #${index + 1}? (Máx: ${batch.quantity})`);
+                                                                                    if (qty && parseInt(qty) > 0 && parseInt(qty) <= batch.quantity) {
+                                                                                        removeExpired(product.id, parseInt(qty), batch.id);
+                                                                                    } else if (qty && parseInt(qty) > batch.quantity) {
+                                                                                        alert('No puedes retirar más unidades de las que hay en el lote');
+                                                                                    }
+                                                                                }}
+                                                                                className="w-full bg-orange-500 text-white py-1 px-2 rounded text-xs font-semibold mt-2"
+                                                                            >
+                                                                                🗑️ Retirar caducados
+                                                                            </button>
+                                                                        </div>
+                                                                    );
+                                                                })}
                                                             </div>
                                                         </div>
 
-                                                        <div className="grid grid-cols-3 gap-2 mb-3">
-                                                            <button
-                                                                onClick={() => addStock(product.id, 5)}
-                                                                className="bg-green-500 text-white py-2 rounded-lg font-bold text-lg"
-                                                            >
-                                                                +5
-                                                            </button>
-                                                            <button
-                                                                onClick={() => addStock(product.id, 10)}
-                                                                className="bg-green-600 text-white py-2 rounded-lg font-bold text-lg"
-                                                            >
-                                                                +10
-                                                            </button>
+                                                        <div className="mb-3 p-3 bg-green-50 border border-green-200 rounded-lg">
+                                                            <h5 className="font-bold text-sm mb-2 text-green-800">➕ Añadir Nuevo Lote</h5>
                                                             <button
                                                                 onClick={() => {
-                                                                    const qty = prompt('¿Cuántos añadir?');
+                                                                    const qty = prompt('¿Cuántas unidades añadir?');
                                                                     if (qty && parseInt(qty) > 0) {
-                                                                        addStock(product.id, parseInt(qty));
+                                                                        const expiry = prompt('Fecha de caducidad (YYYY-MM-DD):');
+                                                                        const cost = prompt('Coste por unidad (€):');
+                                                                        if (expiry && cost) {
+                                                                            addStock(product.id, parseInt(qty), expiry, parseFloat(cost));
+                                                                        } else {
+                                                                            alert('Debes proporcionar fecha de caducidad y coste');
+                                                                        }
                                                                     }
                                                                 }}
-                                                                className="bg-green-700 text-white py-2 rounded-lg font-bold"
+                                                                className="w-full bg-green-600 text-white py-2 rounded-lg font-bold"
                                                             >
-                                                                +Otro
+                                                                ➕ Añadir Lote
                                                             </button>
                                                         </div>
-
-                                                        {product.expiryDate && (
-                                                            <div className="text-xs text-gray-600 mb-2">
-                                                                Caduca: {product.expiryDate}
-                                                            </div>
-                                                        )}
 
                                                         <div className="grid grid-cols-2 gap-2">
                                                             <button
                                                                 onClick={() => {
                                                                     const qty = prompt('¿Cuántas unidades vendidas?');
                                                                     if (qty && parseInt(qty) > 0) {
-                                                                        recordSale(product.id, parseInt(qty));
+                                                                        if (parseInt(qty) <= product.quantity) {
+                                                                            recordSale(product.id, parseInt(qty));
+                                                                        } else {
+                                                                            alert('No hay suficiente stock');
+                                                                        }
                                                                     }
                                                                 }}
                                                                 className="bg-blue-600 text-white py-2 rounded-lg font-semibold"
@@ -1185,15 +1490,10 @@ ${(selectedMachine.expired||[]).slice(-10).reverse().map(e=>`<tr><td>${new Date(
                                                                 💰 Vender
                                                             </button>
                                                             <button
-                                                                onClick={() => {
-                                                                    const qty = prompt('¿Cuántos productos caducados retirar?');
-                                                                    if (qty && parseInt(qty) > 0) {
-                                                                        removeExpired(product.id, parseInt(qty));
-                                                                    }
-                                                                }}
-                                                                className="bg-orange-500 text-white py-2 rounded-lg font-semibold"
+                                                                onClick={() => quickUpdateProduct(product.id, 'price', prompt('Nuevo precio de venta (€):', product.price) || product.price)}
+                                                                className="bg-purple-600 text-white py-2 rounded-lg font-semibold"
                                                             >
-                                                                🗑️ Caducados
+                                                                💵 Precio
                                                             </button>
                                                         </div>
                                                     </div>
