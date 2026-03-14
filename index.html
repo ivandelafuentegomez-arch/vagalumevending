@@ -31,6 +31,7 @@
             const [showCoffeeSalesModal, setShowCoffeeSalesModal] = useState(false);
             const [showEmailModal, setShowEmailModal] = useState(false);
             const [showVisitModal, setShowVisitModal] = useState(false);
+            const [showMaintenanceModal, setShowMaintenanceModal] = useState(false);
             const [activeTab, setActiveTab] = useState('restock');
 
             useEffect(() => {
@@ -82,13 +83,14 @@
                     expired: [],
                     cashMovements: [],
                     visits: [],
+                    maintenances: [],
                     coffeePrices: type === 'coffee' ? {
-                        normal: 0.70,
-                        descafeinado: 0.70,
+                        normal: 0.60,
+                        descafeinado: 0.60,
                         conLeche: 0.70,
                         cortado: 0.70,
-                        chocolate: 0.70
-                        Té: 0.70
+                        chocolate: 0.80,
+                        te: 0.70
                     } : null
                 };
                 saveData([...machines, newMachine]);
@@ -457,6 +459,25 @@
                 setShowVisitModal(false);
             };
 
+            const addMaintenance = (date, description, technician) => {
+                const updatedMachines = machines.map(m => {
+                    if (m.id === selectedMachine.id) {
+                        const maintenance = {
+                            id: Date.now().toString(),
+                            date,
+                            description,
+                            technician,
+                            createdAt: new Date().toISOString()
+                        };
+                        return { ...m, maintenances: [...(m.maintenances || []), maintenance] };
+                    }
+                    return m;
+                });
+                saveData(updatedMachines);
+                setSelectedMachine(updatedMachines.find(m => m.id === selectedMachine.id));
+                setShowMaintenanceModal(false);
+            };
+
             const initializeCoffeeMachine = (machineId) => {
                 const coffeeProducts = [
                     { name: 'Café Normal', unit: 'kg' },
@@ -544,6 +565,9 @@ ${(selectedMachine.cashMovements||[]).slice(-10).reverse().map(m=>`<tr><td>${new
 </tbody></table></div>
 <div class="section"><div class="section-title">Visitas</div><table><thead><tr><th>Fecha</th><th>Ubicacion</th><th>Dinero</th><th>Productos repuestos</th><th>Vehiculo</th></tr></thead><tbody>
 ${(selectedMachine.visits||[]).slice(-20).reverse().map(v=>`<tr><td>${new Date(v.date).toLocaleDateString('es-ES')}</td><td>${v.location}</td><td>${v.moneyAction==='collected'?'Recaudado':'Dejado'}: ${v.moneyAmount.toFixed(2)} EUR</td><td>${v.productsRestocked} uds</td><td>${v.vehicle||'-'}</td></tr>`).join('')||'<tr><td colspan="5">Sin visitas</td></tr>'}
+</tbody></table></div>
+<div class="section"><div class="section-title">Mantenimientos</div><table><thead><tr><th>Fecha</th><th>Descripcion</th><th>Tecnico</th></tr></thead><tbody>
+${(selectedMachine.maintenances||[]).slice(-10).reverse().map(m=>`<tr><td>${new Date(m.date).toLocaleDateString('es-ES')}</td><td>${m.description}</td><td>${m.technician}</td></tr>`).join('')||'<tr><td colspan="3">Sin mantenimientos</td></tr>'}
 </tbody></table></div>
 ${!isCoffee?`<div class="section"><div class="section-title">Productos Retirados</div><table><thead><tr><th>Fecha</th><th>Producto</th><th>Cantidad</th></tr></thead><tbody>
 ${(selectedMachine.expired||[]).slice(-10).reverse().map(e=>`<tr><td>${new Date(e.date).toLocaleString('es-ES')}</td><td>${e.productName}</td><td>${e.quantity} uds</td></tr>`).join('')||'<tr><td colspan="3">Sin productos caducados</td></tr>'}
@@ -704,6 +728,38 @@ ${(selectedMachine.expired||[]).slice(-10).reverse().map(e=>`<tr><td>${new Date(
                 );
             };
 
+            const MaintenanceModal = () => {
+                const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+                const [description, setDescription] = useState('');
+                const [technician, setTechnician] = useState('');
+
+                return (
+                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                        <div className="bg-white rounded-xl p-5 max-w-md w-full shadow-2xl">
+                            <h3 className="font-bold text-lg mb-4 text-indigo-900">🔧 Registrar Mantenimiento</h3>
+                            <div className="space-y-3">
+                                <div>
+                                    <label className="block text-sm font-semibold mb-1 text-gray-700">Fecha del mantenimiento</label>
+                                    <input value={date} onChange={(e) => setDate(e.target.value)} type="date" className="w-full border-2 border-gray-200 rounded-lg p-3" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-semibold mb-1 text-gray-700">Descripción del mantenimiento</label>
+                                    <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Ej: Cambio de filtros, limpieza, reparación..." className="w-full border-2 border-gray-200 rounded-lg p-3 h-24" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-semibold mb-1 text-gray-700">Nombre del técnico</label>
+                                    <input value={technician} onChange={(e) => setTechnician(e.target.value)} placeholder="Nombre del técnico" className="w-full border-2 border-gray-200 rounded-lg p-3" />
+                                </div>
+                            </div>
+                            <div className="flex gap-2 mt-5">
+                                <button onClick={() => { if (date && description && technician) addMaintenance(date, description, technician); }} disabled={!date || !description || !technician} className={`flex-1 py-3 rounded-lg font-semibold ${date && description && technician ? 'bg-indigo-600 text-white' : 'bg-gray-300 text-gray-500 cursor-not-allowed'}`}>Guardar</button>
+                                <button onClick={() => setShowMaintenanceModal(false)} className="flex-1 bg-gray-400 text-white py-3 rounded-lg font-semibold">Cancelar</button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            };
+
             const EmailModal = () => (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
                     <div className="bg-white rounded-xl p-6 max-w-md w-full shadow-2xl">
@@ -717,6 +773,7 @@ ${(selectedMachine.expired||[]).slice(-10).reverse().map(e=>`<tr><td>${new Date(
                                 <li>• Historial de ventas</li>
                                 <li>• Movimientos de dinero</li>
                                 <li>• Registro de visitas</li>
+                                <li>• Historial de mantenimientos</li>
                             </ul>
                         </div>
                         <div className="bg-yellow-50 p-3 rounded-lg mb-4 border border-yellow-200">
@@ -899,16 +956,8 @@ ${(selectedMachine.expired||[]).slice(-10).reverse().map(e=>`<tr><td>${new Date(
                                 <button onClick={() => setActiveTab('sales')} className={tabClass('sales')}>📊 Ventas</button>
                                 <button onClick={() => setActiveTab('cash')} className={tabClass('cash')}>💰 Dinero</button>
                                 <button onClick={() => setActiveTab('stats')} className={tabClass('stats')}>📈 Estadísticas</button>
-                                <button
-                                    onClick={() => setActiveTab('visits')}
-                                    className={`col-span-2 py-3 px-2 rounded-lg font-semibold text-sm ${
-                                        activeTab === 'visits'
-                                            ? 'bg-gradient-to-r from-teal-500 to-teal-700 text-white shadow-lg'
-                                            : 'bg-white text-gray-600'
-                                    }`}
-                                >
-                                    🗺️ Visitas
-                                </button>
+                                <button onClick={() => setActiveTab('visits')} className={tabClass('visits')}>🗺️ Visitas</button>
+                                <button onClick={() => setActiveTab('maintenance')} className={tabClass('maintenance')}>🔧 Mantenimientos</button>
                             </div>
 
                             {activeTab === 'restock' && (
@@ -1119,6 +1168,10 @@ ${(selectedMachine.expired||[]).slice(-10).reverse().map(e=>`<tr><td>${new Date(
                                                 <span className="text-gray-600">Total visitas:</span>
                                                 <span className="font-bold text-teal-600">{(selectedMachine.visits || []).length}</span>
                                             </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-gray-600">Total mantenimientos:</span>
+                                                <span className="font-bold text-indigo-600">{(selectedMachine.maintenances || []).length}</span>
+                                            </div>
                                         </div>
                                     </div>
                                     {!isCoffee && selectedMachine.products.length > 0 && (
@@ -1175,12 +1228,45 @@ ${(selectedMachine.expired||[]).slice(-10).reverse().map(e=>`<tr><td>${new Date(
                                     </div>
                                 </>
                             )}
+
+                            {activeTab === 'maintenance' && (
+                                <>
+                                    <button onClick={() => setShowMaintenanceModal(true)} className="w-full bg-gradient-to-r from-indigo-500 to-indigo-700 text-white py-4 rounded-xl mb-4 font-bold text-lg shadow-lg">🔧 Registrar Mantenimiento</button>
+                                    <div className="space-y-3">
+                                        {(selectedMachine.maintenances || []).slice().reverse().map(maintenance => (
+                                            <div key={maintenance.id} className="bg-white p-4 rounded-xl shadow-lg border-2 border-indigo-200">
+                                                <div className="flex justify-between items-start mb-3">
+                                                    <h4 className="font-bold text-indigo-800 text-lg">🔧 Mantenimiento</h4>
+                                                    <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">{new Date(maintenance.date).toLocaleDateString('es-ES')}</span>
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <div className="bg-indigo-50 border border-indigo-200 p-3 rounded-lg">
+                                                        <p className="text-xs text-gray-500 mb-1">Descripción</p>
+                                                        <p className="text-sm text-indigo-900">{maintenance.description}</p>
+                                                    </div>
+                                                    <div className="bg-purple-50 border border-purple-200 p-3 rounded-lg">
+                                                        <p className="text-xs text-gray-500 mb-1">Técnico</p>
+                                                        <p className="font-bold text-purple-700">👨‍🔧 {maintenance.technician}</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                        {(selectedMachine.maintenances || []).length === 0 && (
+                                            <div className="text-center text-gray-500 mt-8">
+                                                <p className="text-4xl mb-2">🔧</p>
+                                                <p>No hay mantenimientos registrados</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </>
+                            )}
                         </div>
 
                         {showCashModal && <CashModal />}
                         {showCoffeeSalesModal && <CoffeeSalesModal />}
                         {showEmailModal && <EmailModal />}
                         {showVisitModal && <VisitModal />}
+                        {showMaintenanceModal && <MaintenanceModal />}
                     </div>
                 );
             }
