@@ -32,12 +32,6 @@
             const [showEmailModal, setShowEmailModal] = useState(false);
             const [activeTab, setActiveTab] = useState('restock');
 
-            // VISITAS
-            const [showVisitForm, setShowVisitForm] = useState(false);
-            const [visitDate, setVisitDate] = useState(new Date().toISOString().split('T')[0]);
-            const [visitDestination, setVisitDestination] = useState('');
-            const [visitNotes, setVisitNotes] = useState('');
-
             useEffect(() => {
                 const saved = localStorage.getItem('vending-machines');
                 if (saved) {
@@ -61,7 +55,6 @@
                     sales: [],
                     expired: [],
                     cashMovements: [],
-                    visits: [],
                     coffeePrices: type === 'coffee' ? {
                         normal: 0.60,
                         descafeinado: 0.60,
@@ -253,6 +246,7 @@
                                 quantity: quantityExpired,
                                 date: new Date().toISOString()
                             };
+
                             const newQuantity = product.quantity - quantityExpired;
                             if (newQuantity <= 0) {
                                 return { 
@@ -298,43 +292,6 @@
                 setShowCashModal(false);
             };
 
-            // NUEVA FUNCIÓN: Añadir visita
-            const addVisit = () => {
-                if (!visitDate || !visitDestination) return;
-                const updatedMachines = machines.map(m => {
-                    if (m.id === selectedMachine.id) {
-                        const visit = {
-                            id: Date.now().toString(),
-                            date: visitDate,
-                            destination: visitDestination,
-                            notes: visitNotes,
-                        };
-                        return { ...m, visits: [...(m.visits || []), visit] };
-                    }
-                    return m;
-                });
-                saveData(updatedMachines);
-                setSelectedMachine(updatedMachines.find(m => m.id === selectedMachine.id));
-                setVisitDate(new Date().toISOString().split('T')[0]);
-                setVisitDestination('');
-                setVisitNotes('');
-                setShowVisitForm(false);
-            };
-
-            // NUEVA FUNCIÓN: Eliminar visita
-            const deleteVisit = (visitId) => {
-                if (confirm('¿Eliminar esta visita?')) {
-                    const updatedMachines = machines.map(m => {
-                        if (m.id === selectedMachine.id) {
-                            return { ...m, visits: (m.visits || []).filter(v => v.id !== visitId) };
-                        }
-                        return m;
-                    });
-                    saveData(updatedMachines);
-                    setSelectedMachine(updatedMachines.find(m => m.id === selectedMachine.id));
-                }
-            };
-
             const initializeCoffeeMachine = (machineId) => {
                 const coffeeProducts = [
                     { name: 'Café Normal', unit: 'kg' },
@@ -343,6 +300,7 @@
                     { name: 'Chocolate', unit: 'kg' },
                     { name: 'Agua', unit: 'L' }
                 ];
+
                 const updatedMachines = machines.map(m => {
                     if (m.id === machineId) {
                         const newProducts = coffeeProducts.map(cp => ({
@@ -370,6 +328,7 @@
                 return (machine.sales || []).reduce((sum, sale) => sum + sale.profit, 0);
             };
 
+
             const generateEmailReport = (machine) => {
                 const isCoffee = machine.type === 'coffee';
                 const totalRevenue = getTotalRevenue(machine);
@@ -382,11 +341,13 @@
                 report += `Tipo: ${isCoffee ? 'Máquina de Café' : 'Vending'}\n`;
                 report += `Fecha: ${new Date().toLocaleDateString('es-ES')}\n\n`;
                 report += `${'='.repeat(50)}\n\n`;
+
                 report += `📊 RESUMEN FINANCIERO\n${'='.repeat(50)}\n`;
                 report += `Total Ventas: ${totalRevenue.toFixed(2)}€\n`;
                 report += `Beneficio Total: ${totalProfit.toFixed(2)}€\n`;
                 report += `Número de Ventas: ${salesCount}\n`;
                 report += `Dinero en Máquina: ${currentCash.toFixed(2)}€\n\n`;
+
                 report += `📦 STOCK ACTUAL\n${'='.repeat(50)}\n`;
                 if (machine.products.length > 0) {
                     machine.products.forEach(p => {
@@ -400,6 +361,7 @@
                     report += `Sin productos\n`;
                 }
                 report += `\n`;
+
                 report += `💰 ÚLTIMAS VENTAS (10 más recientes)\n${'='.repeat(50)}\n`;
                 const recentSales = (machine.sales || []).slice(-10).reverse();
                 if (recentSales.length > 0) {
@@ -414,6 +376,33 @@
                 } else {
                     report += `Sin ventas\n`;
                 }
+                report += `\n`;
+
+                report += `💸 MOVIMIENTOS DE DINERO (10 más recientes)\n${'='.repeat(50)}\n`;
+                const recentCash = (machine.cashMovements || []).slice(-10).reverse();
+                if (recentCash.length > 0) {
+                    recentCash.forEach(mov => {
+                        const date = new Date(mov.date).toLocaleString('es-ES');
+                        const type = mov.type === 'add' ? 'Metido' : 'Retirado';
+                        const sign = mov.type === 'add' ? '+' : '-';
+                        report += `${date} - ${type}: ${sign}${mov.amount.toFixed(2)}€\n`;
+                    });
+                } else {
+                    report += `Sin movimientos\n`;
+                }
+
+                if (!isCoffee) {
+                    report += `\n🗑️ PRODUCTOS CADUCADOS\n${'='.repeat(50)}\n`;
+                    if ((machine.expired || []).length > 0) {
+                        machine.expired.slice(-10).reverse().forEach(exp => {
+                            const date = new Date(exp.date).toLocaleString('es-ES');
+                            report += `${date} - ${exp.productName}: ${exp.quantity} uds\n`;
+                        });
+                    } else {
+                        report += `Sin productos caducados\n`;
+                    }
+                }
+
                 return report;
             };
 
@@ -430,6 +419,10 @@ body{font-family:Arial,sans-serif;margin:40px;color:#333}
 .header{text-align:center;margin-bottom:30px;padding-bottom:20px;border-bottom:3px solid ${isCoffee?'#d97706':'#2563eb'}}
 h1{color:${isCoffee?'#d97706':'#2563eb'};margin:10px 0}
 .subtitle{color:#666;font-size:14px}
+.info-box{background:#f3f4f6;padding:15px;border-radius:8px;margin:20px 0}
+.info-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #ddd}
+.info-row:last-child{border-bottom:none}
+.label{font-weight:bold;color:#555}
 .highlight-box{background:${isCoffee?'#fef3c7':'#dbeafe'};border-left:4px solid ${isCoffee?'#d97706':'#2563eb'};padding:15px;margin:15px 0}
 .metric{display:inline-block;margin:10px 20px 10px 0}
 .metric-value{font-size:24px;font-weight:bold;color:${isCoffee?'#d97706':'#2563eb'}}
@@ -447,6 +440,10 @@ tr:nth-child(even){background:#f9fafb}
 <div class="subtitle">${selectedMachine.name} - ${selectedMachine.location}</div>
 <div class="subtitle">${new Date().toLocaleDateString('es-ES')}</div>
 </div>
+<div class="info-box">
+<div class="info-row"><span class="label">Tipo:</span><span>${isCoffee?'Maquina de Cafe':'Vending'}</span></div>
+<div class="info-row"><span class="label">Ubicacion:</span><span>${selectedMachine.location}</span></div>
+</div>
 <div class="highlight-box">
 <div class="metric"><div class="metric-value">${totalRevenue.toFixed(2)} EUR</div><div class="metric-label">Total Ventas</div></div>
 <div class="metric"><div class="metric-value">${totalProfit.toFixed(2)} EUR</div><div class="metric-label">Beneficio Total</div></div>
@@ -459,6 +456,12 @@ ${selectedMachine.products.map(p=>`<tr><td>${p.name}</td><td>${isCoffee?p.quanti
 <div class="section"><div class="section-title">Ultimas Ventas</div><table><thead><tr><th>Fecha</th><th>Producto</th>${!isCoffee?'<th>Cantidad</th>':''}<th>Importe</th></tr></thead><tbody>
 ${(selectedMachine.sales||[]).slice(-10).reverse().map(s=>`<tr><td>${new Date(s.date).toLocaleString('es-ES')}</td><td>${s.productName}</td>${!isCoffee?`<td>${s.quantity}</td>`:''}<td>${s.revenue.toFixed(2)} EUR</td></tr>`).join('')||'<tr><td colspan="4">Sin ventas</td></tr>'}
 </tbody></table></div>
+<div class="section"><div class="section-title">Movimientos de Dinero</div><table><thead><tr><th>Fecha</th><th>Tipo</th><th>Cantidad</th></tr></thead><tbody>
+${(selectedMachine.cashMovements||[]).slice(-10).reverse().map(m=>`<tr><td>${new Date(m.date).toLocaleString('es-ES')}</td><td>${m.type==='add'?'Metido':'Retirado'}</td><td>${m.type==='add'?'+':'-'}${m.amount.toFixed(2)} EUR</td></tr>`).join('')||'<tr><td colspan="3">Sin movimientos</td></tr>'}
+</tbody></table></div>
+${!isCoffee?`<div class="section"><div class="section-title">Productos Retirados</div><table><thead><tr><th>Fecha</th><th>Producto</th><th>Cantidad</th></tr></thead><tbody>
+${(selectedMachine.expired||[]).slice(-10).reverse().map(e=>`<tr><td>${new Date(e.date).toLocaleString('es-ES')}</td><td>${e.productName}</td><td>${e.quantity} uds</td></tr>`).join('')||'<tr><td colspan="3">Sin productos caducados</td></tr>'}
+</tbody></table></div>`:''}
 <div class="footer"><p>Reporte generado por Vending Vagalume - ${new Date().toLocaleDateString('es-ES')}</p></div>
 </body></html>`;
 
@@ -475,27 +478,76 @@ ${(selectedMachine.sales||[]).slice(-10).reverse().map(s=>`<tr><td>${new Date(s.
                 }, 0);
             };
 
-            // ---- FORMULARIOS / MODALES (igual que antes) ----
-
             const AddMachineForm = () => {
                 const [name, setName] = useState('');
                 const [location, setLocation] = useState('');
                 const [type, setType] = useState('vending');
+
                 return (
                     <div className="bg-white rounded-xl p-5 mb-4 shadow-xl border border-indigo-100">
                         <h3 className="font-bold text-lg mb-4 text-indigo-900">Nueva Máquina</h3>
+
                         <div className="mb-4">
                             <label className="block text-sm font-semibold mb-2 text-gray-700">Tipo de Máquina</label>
                             <div className="grid grid-cols-2 gap-2">
-                                <button onClick={() => setType('vending')} className={`py-3 rounded-lg font-semibold ${type === 'vending' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600'}`}>🍫 Vending</button>
-                                <button onClick={() => setType('coffee')} className={`py-3 rounded-lg font-semibold ${type === 'coffee' ? 'bg-amber-600 text-white' : 'bg-gray-200 text-gray-600'}`}>☕ Café</button>
+                                <button
+                                    onClick={() => setType('vending')}
+                                    className={`py-3 rounded-lg font-semibold ${
+                                        type === 'vending' 
+                                            ? 'bg-blue-600 text-white' 
+                                            : 'bg-gray-200 text-gray-600'
+                                    }`}
+                                >
+                                    🍫 Vending
+                                </button>
+                                <button
+                                    onClick={() => setType('coffee')}
+                                    className={`py-3 rounded-lg font-semibold ${
+                                        type === 'coffee' 
+                                            ? 'bg-amber-600 text-white' 
+                                            : 'bg-gray-200 text-gray-600'
+                                    }`}
+                                >
+                                    ☕ Café
+                                </button>
                             </div>
                         </div>
-                        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nombre" className="w-full border-2 border-gray-200 rounded-lg p-3 mb-3" />
-                        <input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Ubicación" className="w-full border-2 border-gray-200 rounded-lg p-3 mb-4" />
+
+                        <input
+                            value={name}
+                            onChange={(e) => setName(e.target.value)}
+                            placeholder="Nombre"
+                            className="w-full border-2 border-gray-200 rounded-lg p-3 mb-3"
+                        />
+                        <input
+                            value={location}
+                            onChange={(e) => setLocation(e.target.value)}
+                            placeholder="Ubicación"
+                            className="w-full border-2 border-gray-200 rounded-lg p-3 mb-4"
+                        />
                         <div className="flex gap-2">
-                            <button onClick={() => { if (name && location) { addMachine(name, location, type); } }} className="flex-1 bg-green-600 text-white py-3 rounded-lg font-semibold">Guardar</button>
-                            <button onClick={() => setShowAddMachine(false)} className="flex-1 bg-gray-400 text-white py-3 rounded-lg font-semibold">Cancelar</button>
+                            <button
+                                onClick={() => {
+                                    if (name && location) {
+                                        addMachine(name, location, type);
+                                        if (type === 'coffee') {
+                                            setTimeout(() => {
+                                                const newMachine = machines[machines.length];
+                                                if (newMachine) initializeCoffeeMachine(newMachine.id);
+                                            }, 100);
+                                        }
+                                    }
+                                }}
+                                className="flex-1 bg-green-600 text-white py-3 rounded-lg font-semibold"
+                            >
+                                Guardar
+                            </button>
+                            <button
+                                onClick={() => setShowAddMachine(false)}
+                                className="flex-1 bg-gray-400 text-white py-3 rounded-lg font-semibold"
+                            >
+                                Cancelar
+                            </button>
                         </div>
                     </div>
                 );
@@ -507,19 +559,64 @@ ${(selectedMachine.sales||[]).slice(-10).reverse().map(s=>`<tr><td>${new Date(s.
                 const [expiryDate, setExpiryDate] = useState('');
                 const [cost, setCost] = useState('');
                 const [price, setPrice] = useState('');
+
                 return (
                     <div className="bg-white rounded-xl p-5 mb-4 shadow-xl border border-green-100">
                         <h3 className="font-bold text-lg mb-4 text-green-900">Nuevo Producto</h3>
-                        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nombre del producto" className="w-full border-2 border-gray-200 rounded-lg p-3 mb-3" />
-                        <input value={quantity} onChange={(e) => setQuantity(e.target.value)} type="number" placeholder="Cantidad inicial" className="w-full border-2 border-gray-200 rounded-lg p-3 mb-3" />
-                        <input value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} type="date" className="w-full border-2 border-gray-200 rounded-lg p-3 mb-3" />
+                        <input
+                            value={name}
+                            onChange={(e) => setName(e.target.value)}
+                            placeholder="Nombre del producto"
+                            className="w-full border-2 border-gray-200 rounded-lg p-3 mb-3"
+                        />
+                        <input
+                            value={quantity}
+                            onChange={(e) => setQuantity(e.target.value)}
+                            type="number"
+                            placeholder="Cantidad inicial"
+                            className="w-full border-2 border-gray-200 rounded-lg p-3 mb-3"
+                        />
+                        <input
+                            value={expiryDate}
+                            onChange={(e) => setExpiryDate(e.target.value)}
+                            type="date"
+                            className="w-full border-2 border-gray-200 rounded-lg p-3 mb-3"
+                        />
                         <div className="grid grid-cols-2 gap-3 mb-4">
-                            <input value={cost} onChange={(e) => setCost(e.target.value)} type="number" step="0.01" placeholder="Coste (€)" className="w-full border-2 border-gray-200 rounded-lg p-3" />
-                            <input value={price} onChange={(e) => setPrice(e.target.value)} type="number" step="0.01" placeholder="Precio (€)" className="w-full border-2 border-gray-200 rounded-lg p-3" />
+                            <input
+                                value={cost}
+                                onChange={(e) => setCost(e.target.value)}
+                                type="number"
+                                step="0.01"
+                                placeholder="Coste (€)"
+                                className="w-full border-2 border-gray-200 rounded-lg p-3"
+                            />
+                            <input
+                                value={price}
+                                onChange={(e) => setPrice(e.target.value)}
+                                type="number"
+                                step="0.01"
+                                placeholder="Precio (€)"
+                                className="w-full border-2 border-gray-200 rounded-lg p-3"
+                            />
                         </div>
                         <div className="flex gap-2">
-                            <button onClick={() => { if (name && quantity && expiryDate && cost && price) addProduct(name, quantity, expiryDate, cost, price); }} className="flex-1 bg-green-600 text-white py-3 rounded-lg font-semibold">Guardar</button>
-                            <button onClick={() => setShowAddProduct(false)} className="flex-1 bg-gray-400 text-white py-3 rounded-lg font-semibold">Cancelar</button>
+                            <button
+                                onClick={() => {
+                                    if (name && quantity && expiryDate && cost && price) {
+                                        addProduct(name, quantity, expiryDate, cost, price);
+                                    }
+                                }}
+                                className="flex-1 bg-green-600 text-white py-3 rounded-lg font-semibold"
+                            >
+                                Guardar
+                            </button>
+                            <button
+                                onClick={() => setShowAddProduct(false)}
+                                className="flex-1 bg-gray-400 text-white py-3 rounded-lg font-semibold"
+                            >
+                                Cancelar
+                            </button>
                         </div>
                     </div>
                 );
@@ -528,18 +625,66 @@ ${(selectedMachine.sales||[]).slice(-10).reverse().map(s=>`<tr><td>${new Date(s.
             const CashModal = () => {
                 const [type, setType] = useState('remove');
                 const [amount, setAmount] = useState('');
+
                 return (
                     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
                         <div className="bg-white rounded-xl p-5 max-w-md w-full shadow-2xl">
                             <h3 className="font-bold text-lg mb-4 text-blue-900">💰 Movimiento de Dinero</h3>
+
                             <div className="flex gap-2 mb-4">
-                                <button onClick={() => setType('remove')} className={`flex-1 py-3 rounded-lg font-semibold ${type === 'remove' ? 'bg-red-500 text-white' : 'bg-gray-200 text-gray-600'}`}>💸 Retirar</button>
-                                <button onClick={() => setType('add')} className={`flex-1 py-3 rounded-lg font-semibold ${type === 'add' ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-600'}`}>💰 Meter</button>
+                                <button
+                                    onClick={() => setType('remove')}
+                                    className={`flex-1 py-3 rounded-lg font-semibold ${
+                                        type === 'remove' 
+                                            ? 'bg-red-500 text-white' 
+                                            : 'bg-gray-200 text-gray-600'
+                                    }`}
+                                >
+                                    💸 Retirar
+                                </button>
+                                <button
+                                    onClick={() => setType('add')}
+                                    className={`flex-1 py-3 rounded-lg font-semibold ${
+                                        type === 'add' 
+                                            ? 'bg-green-500 text-white' 
+                                            : 'bg-gray-200 text-gray-600'
+                                    }`}
+                                >
+                                    💰 Meter
+                                </button>
                             </div>
-                            <input value={amount} onChange={(e) => setAmount(e.target.value)} type="number" step="0.01" placeholder="Cantidad (€)" className="w-full border-2 border-gray-200 rounded-lg p-3 mb-4 text-lg" autoFocus />
+
+                            <input
+                                value={amount}
+                                onChange={(e) => setAmount(e.target.value)}
+                                type="number"
+                                step="0.01"
+                                placeholder="Cantidad (€)"
+                                className="w-full border-2 border-gray-200 rounded-lg p-3 mb-4 text-lg"
+                                autoFocus
+                            />
+
                             <div className="flex gap-2">
-                                <button onClick={() => { if (amount && parseFloat(amount) > 0) { addCashMovement(type, amount); setAmount(''); } }} className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-semibold">Guardar</button>
-                                <button onClick={() => { setShowCashModal(false); setAmount(''); }} className="flex-1 bg-gray-400 text-white py-3 rounded-lg font-semibold">Cancelar</button>
+                                <button
+                                    onClick={() => {
+                                        if (amount && parseFloat(amount) > 0) {
+                                            addCashMovement(type, amount);
+                                            setAmount('');
+                                        }
+                                    }}
+                                    className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-semibold"
+                                >
+                                    Guardar
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        setShowCashModal(false);
+                                        setAmount('');
+                                    }}
+                                    className="flex-1 bg-gray-400 text-white py-3 rounded-lg font-semibold"
+                                >
+                                    Cancelar
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -548,25 +693,72 @@ ${(selectedMachine.sales||[]).slice(-10).reverse().map(s=>`<tr><td>${new Date(s.
 
             const CoffeeSalesModal = () => {
                 const [totalRevenue, setTotalRevenue] = useState('');
+
                 return (
                     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
                         <div className="bg-white rounded-xl p-5 max-w-md w-full shadow-2xl">
                             <h3 className="font-bold text-lg mb-4 text-amber-900">☕ Registrar Recaudación</h3>
-                            <input value={totalRevenue} onChange={(e) => setTotalRevenue(e.target.value)} type="number" step="0.01" placeholder="Dinero recaudado (€)" className="w-full border-2 border-amber-300 rounded-lg p-4 mb-4 text-2xl font-bold text-center" autoFocus />
+
+                            <div className="bg-amber-50 p-4 rounded-lg mb-4">
+                                <p className="text-sm text-gray-700 mb-2">
+                                    💡 Introduce el dinero total recaudado de la máquina de café
+                                </p>
+                                <p className="text-xs text-gray-500">
+                                    El sistema calculará automáticamente el beneficio estimado
+                                </p>
+                            </div>
+
+                            <input
+                                value={totalRevenue}
+                                onChange={(e) => setTotalRevenue(e.target.value)}
+                                type="number"
+                                step="0.01"
+                                placeholder="Dinero recaudado (€)"
+                                className="w-full border-2 border-amber-300 rounded-lg p-4 mb-4 text-2xl font-bold text-center"
+                                autoFocus
+                            />
+
                             {totalRevenue && parseFloat(totalRevenue) > 0 && (
                                 <div className="bg-green-50 p-3 rounded-lg mb-4 border border-green-200">
                                     <p className="text-xs text-gray-600 mb-1">Beneficio estimado (70%):</p>
-                                    <p className="text-xl font-bold text-green-700">{(parseFloat(totalRevenue) * 0.7).toFixed(2)}€</p>
+                                    <p className="text-xl font-bold text-green-700">
+                                        {(parseFloat(totalRevenue) * 0.7).toFixed(2)}€
+                                    </p>
                                 </div>
                             )}
+
                             <div className="flex gap-2">
-                                <button onClick={() => { if (totalRevenue && parseFloat(totalRevenue) > 0) { recordCoffeeSale(totalRevenue); setTotalRevenue(''); } }} disabled={!totalRevenue || parseFloat(totalRevenue) <= 0} className={`flex-1 py-3 rounded-lg font-semibold ${totalRevenue && parseFloat(totalRevenue) > 0 ? 'bg-amber-600 text-white' : 'bg-gray-300 text-gray-500 cursor-not-allowed'}`}>Guardar</button>
-                                <button onClick={() => { setShowCoffeeSalesModal(false); setTotalRevenue(''); }} className="flex-1 bg-gray-400 text-white py-3 rounded-lg font-semibold">Cancelar</button>
+                                <button
+                                    onClick={() => {
+                                        if (totalRevenue && parseFloat(totalRevenue) > 0) {
+                                            recordCoffeeSale(totalRevenue);
+                                            setTotalRevenue('');
+                                        }
+                                    }}
+                                    disabled={!totalRevenue || parseFloat(totalRevenue) <= 0}
+                                    className={`flex-1 py-3 rounded-lg font-semibold ${
+                                        totalRevenue && parseFloat(totalRevenue) > 0
+                                            ? 'bg-amber-600 text-white'
+                                            : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                    }`}
+                                >
+                                    Guardar
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        setShowCoffeeSalesModal(false);
+                                        setTotalRevenue('');
+                                    }}
+                                    className="flex-1 bg-gray-400 text-white py-3 rounded-lg font-semibold"
+                                >
+                                    Cancelar
+                                </button>
                             </div>
                         </div>
                     </div>
                 );
             };
+
 
             const EmailModal = () => (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -574,6 +766,7 @@ ${(selectedMachine.sales||[]).slice(-10).reverse().map(s=>`<tr><td>${new Date(s.
                         <h3 className="font-bold text-xl mb-4 text-blue-900">📄 Generar Reporte PDF</h3>
                         <div className="bg-gradient-to-r from-blue-50 to-purple-50 p-5 rounded-lg mb-5 border-2 border-blue-200">
                             <p className="text-sm text-gray-700 mb-3 font-semibold">✨ Se generará un reporte profesional</p>
+                            <p className="text-xs text-gray-600 mb-2">📊 Incluye:</p>
                             <ul className="text-xs text-gray-600 ml-4 space-y-1">
                                 <li>• Resumen financiero completo</li>
                                 <li>• Stock actual detallado</li>
@@ -585,8 +778,12 @@ ${(selectedMachine.sales||[]).slice(-10).reverse().map(s=>`<tr><td>${new Date(s.
                             <p className="text-xs text-yellow-800">💡 <strong>Tip:</strong> En la ventana de impresión, selecciona "Guardar como PDF"</p>
                         </div>
                         <div className="flex gap-2">
-                            <button onClick={downloadPDF} className="flex-1 bg-gradient-to-r from-blue-600 to-purple-600 text-white py-4 rounded-lg font-bold text-lg shadow-lg">📄 Generar PDF</button>
-                            <button onClick={() => setShowEmailModal(false)} className="flex-1 bg-gray-400 text-white py-4 rounded-lg font-semibold">Cancelar</button>
+                            <button onClick={downloadPDF} className="flex-1 bg-gradient-to-r from-blue-600 to-purple-600 text-white py-4 rounded-lg font-bold text-lg shadow-lg">
+                                📄 Generar PDF
+                            </button>
+                            <button onClick={() => setShowEmailModal(false)} className="flex-1 bg-gray-400 text-white py-4 rounded-lg font-semibold">
+                                Cancelar
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -595,6 +792,7 @@ ${(selectedMachine.sales||[]).slice(-10).reverse().map(s=>`<tr><td>${new Date(s.
             const CoffeeProductCard = ({ product }) => {
                 const [addQuantity, setAddQuantity] = useState('');
                 const [addCost, setAddCost] = useState('');
+
                 const handleAdd = () => {
                     if (addQuantity && parseFloat(addQuantity) > 0 && addCost && parseFloat(addCost) > 0) {
                         addStockWithCost(product.id, parseFloat(addQuantity), parseFloat(addCost));
@@ -602,40 +800,84 @@ ${(selectedMachine.sales||[]).slice(-10).reverse().map(s=>`<tr><td>${new Date(s.
                         setAddCost('');
                     }
                 };
+
                 return (
                     <div className="bg-white p-4 rounded-xl shadow-lg border-2 border-amber-200">
                         <h4 className="font-bold text-lg mb-3">{product.name}</h4>
+
                         <div className="bg-amber-50 p-3 rounded-lg mb-3">
                             <p className="text-xs text-gray-600 mb-1">Stock actual</p>
-                            <p className="text-2xl font-bold text-amber-700">{product.quantity.toFixed(1)} {product.unit}</p>
+                            <p className="text-2xl font-bold text-amber-700">
+                                {product.quantity.toFixed(1)} {product.unit}
+                            </p>
                             <p className="text-xs text-gray-600 mt-2">Coste actual: {(product.cost || 0).toFixed(2)}€/{product.unit}</p>
                         </div>
+
                         <div className="space-y-2">
-                            <input type="number" step="0.1" value={addQuantity} onChange={(e) => setAddQuantity(e.target.value)} placeholder={`Cantidad (${product.unit})`} className="w-full border-2 border-amber-300 rounded-lg p-2 text-center font-semibold" />
-                            <input type="number" step="0.01" value={addCost} onChange={(e) => setAddCost(e.target.value)} placeholder={`Precio (€/${product.unit})`} className="w-full border-2 border-green-300 rounded-lg p-2 text-center font-semibold" />
-                            <button onClick={handleAdd} disabled={!addQuantity || !addCost || parseFloat(addQuantity) <= 0 || parseFloat(addCost) <= 0} className={`w-full py-3 rounded-lg font-bold text-lg ${addQuantity && addCost && parseFloat(addQuantity) > 0 && parseFloat(addCost) > 0 ? 'bg-gradient-to-r from-amber-500 to-amber-700 text-white shadow-md' : 'bg-gray-300 text-gray-500 cursor-not-allowed'}`}>➕ Agregar</button>
+                            <input
+                                type="number"
+                                step="0.1"
+                                value={addQuantity}
+                                onChange={(e) => setAddQuantity(e.target.value)}
+                                placeholder={`Cantidad (${product.unit})`}
+                                className="w-full border-2 border-amber-300 rounded-lg p-2 text-center font-semibold"
+                            />
+                            <input
+                                type="number"
+                                step="0.01"
+                                value={addCost}
+                                onChange={(e) => setAddCost(e.target.value)}
+                                placeholder={`Precio (€/${product.unit})`}
+                                className="w-full border-2 border-green-300 rounded-lg p-2 text-center font-semibold"
+                            />
+                            <button
+                                onClick={handleAdd}
+                                disabled={!addQuantity || !addCost || parseFloat(addQuantity) <= 0 || parseFloat(addCost) <= 0}
+                                className={`w-full py-3 rounded-lg font-bold text-lg ${
+                                    addQuantity && addCost && parseFloat(addQuantity) > 0 && parseFloat(addCost) > 0
+                                        ? 'bg-gradient-to-r from-amber-500 to-amber-700 text-white shadow-md'
+                                        : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                }`}
+                            >
+                                ➕ Agregar
+                            </button>
                         </div>
                     </div>
                 );
             };
 
-            // ---- VISTA: LISTA DE MÁQUINAS ----
             if (currentView === 'machines') {
                 return (
                     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 p-4">
                         <div className="max-w-md mx-auto">
                             <div className="text-center mb-8">
-                                <img src="https://cdn.abacus.ai/images/95fb1498-cc5a-4f10-98f4-da14a24bdd0a.png" alt="Vagalume Logo" className="w-32 h-32 mx-auto mb-4" />
-                                <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-500 to-blue-700 bg-clip-text text-transparent">Vending Vagalume</h1>
+                                <img 
+                                    src="https://cdn.abacus.ai/images/95fb1498-cc5a-4f10-98f4-da14a24bdd0a.png" 
+                                    alt="Vagalume Logo" 
+                                    className="w-32 h-32 mx-auto mb-4"
+                                />
+                                <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-500 to-blue-700 bg-clip-text text-transparent">
+                                    Vending Vagalume
+                                </h1>
                             </div>
-                            <button onClick={() => setShowAddMachine(true)} className="w-full bg-gradient-to-r from-blue-500 to-blue-700 text-white py-4 rounded-xl mb-6 font-bold text-lg shadow-lg">+ Nueva Máquina</button>
+
+                            <button
+                                onClick={() => setShowAddMachine(true)}
+                                className="w-full bg-gradient-to-r from-blue-500 to-blue-700 text-white py-4 rounded-xl mb-6 font-bold text-lg shadow-lg"
+                            >
+                                + Nueva Máquina
+                            </button>
+
                             {showAddMachine && <AddMachineForm />}
+
                             <div className="space-y-4">
                                 {machines.map(machine => {
                                     const totalProfit = getTotalProfit(machine);
                                     const isCoffee = machine.type === 'coffee';
+
                                     let lowStockCount = 0;
                                     let expiringCount = 0;
+
                                     if (!isCoffee) {
                                         lowStockCount = machine.products.filter(p => p.quantity < 5).length;
                                         const today = new Date();
@@ -647,6 +889,7 @@ ${(selectedMachine.sales||[]).slice(-10).reverse().map(s=>`<tr><td>${new Date(s.
                                     } else {
                                         lowStockCount = machine.products.filter(p => p.quantity < 1).length;
                                     }
+
                                     return (
                                         <div key={machine.id} className="bg-white rounded-xl p-5 shadow-lg">
                                             <div className="flex justify-between items-start mb-4">
@@ -658,13 +901,27 @@ ${(selectedMachine.sales||[]).slice(-10).reverse().map(s=>`<tr><td>${new Date(s.
                                                     <p className="text-sm text-gray-600">📍 {machine.location}</p>
                                                     {(lowStockCount > 0 || expiringCount > 0) && (
                                                         <div className="flex gap-2 mt-2">
-                                                            {lowStockCount > 0 && <span className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded-full">⚠️ {lowStockCount} bajo stock</span>}
-                                                            {expiringCount > 0 && <span className="text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded-full">⏰ {expiringCount} caducan pronto</span>}
+                                                            {lowStockCount > 0 && (
+                                                                <span className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded-full">
+                                                                    ⚠️ {lowStockCount} bajo stock
+                                                                </span>
+                                                            )}
+                                                            {expiringCount > 0 && (
+                                                                <span className="text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded-full">
+                                                                    ⏰ {expiringCount} caducan pronto
+                                                                </span>
+                                                            )}
                                                         </div>
                                                     )}
                                                 </div>
-                                                <button onClick={() => deleteMachine(machine.id)} className="text-red-500 text-xl">🗑️</button>
+                                                <button
+                                                    onClick={() => deleteMachine(machine.id)}
+                                                    className="text-red-500 text-xl"
+                                                >
+                                                    🗑️
+                                                </button>
                                             </div>
+
                                             <div className="grid grid-cols-2 gap-2 mb-4">
                                                 <div className="bg-green-50 p-3 rounded-lg">
                                                     <p className="text-xs text-gray-600">Total Ventas</p>
@@ -675,14 +932,40 @@ ${(selectedMachine.sales||[]).slice(-10).reverse().map(s=>`<tr><td>${new Date(s.
                                                     <p className="font-bold text-emerald-700">{totalProfit.toFixed(2)}€</p>
                                                 </div>
                                             </div>
+
                                             <div className="grid grid-cols-2 gap-2">
-                                                <button onClick={() => { setSelectedMachine(machine); setCurrentView('detail'); setActiveTab('restock'); if (isCoffee && machine.products.length === 0) initializeCoffeeMachine(machine.id); }} className={`${isCoffee ? 'bg-gradient-to-r from-amber-500 to-amber-700' : 'bg-gradient-to-r from-blue-500 to-blue-700'} text-white py-3 rounded-lg font-bold shadow-md`}>{isCoffee ? '☕ Gestionar' : '🔧 Reponer'}</button>
-                                                <button onClick={() => { setSelectedMachine(machine); setShowEmailModal(true); }} className="bg-gradient-to-r from-purple-500 to-purple-700 text-white py-3 rounded-lg font-bold shadow-md">📄 PDF</button>
+                                                <button
+                                                    onClick={() => {
+                                                        setSelectedMachine(machine);
+                                                        setCurrentView('detail');
+                                                        setActiveTab('restock');
+                                                        if (isCoffee && machine.products.length === 0) {
+                                                            initializeCoffeeMachine(machine.id);
+                                                        }
+                                                    }}
+                                                    className={`${
+                                                        isCoffee 
+                                                            ? 'bg-gradient-to-r from-amber-500 to-amber-700' 
+                                                            : 'bg-gradient-to-r from-blue-500 to-blue-700'
+                                                    } text-white py-3 rounded-lg font-bold shadow-md`}
+                                                >
+                                                    {isCoffee ? '☕ Gestionar' : '🔧 Reponer'}
+                                                </button>
+                                                <button
+                                                    onClick={() => {
+                                                        setSelectedMachine(machine);
+                                                        setShowEmailModal(true);
+                                                    }}
+                                                    className="bg-gradient-to-r from-purple-500 to-purple-700 text-white py-3 rounded-lg font-bold shadow-md"
+                                                >
+                                                    📄 PDF
+                                                </button>
                                             </div>
                                         </div>
                                     );
                                 })}
                             </div>
+
                             {machines.length === 0 && !showAddMachine && (
                                 <div className="text-center text-gray-500 mt-16">
                                     <p className="text-6xl mb-4">📦</p>
@@ -695,216 +978,410 @@ ${(selectedMachine.sales||[]).slice(-10).reverse().map(s=>`<tr><td>${new Date(s.
                 );
             }
 
-            // ---- VISTA: DETALLE DE MÁQUINA ----
             if (currentView === 'detail' && selectedMachine) {
                 const isCoffee = selectedMachine.type === 'coffee';
-                const visits = selectedMachine.visits || [];
 
                 return (
                     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 p-4 pb-20">
                         <div className="max-w-md mx-auto">
-                            <button onClick={() => setCurrentView('machines')} className="mb-4 text-blue-600 font-semibold text-lg">← Volver</button>
+                            <button
+                                onClick={() => setCurrentView('machines')}
+                                className="mb-4 text-blue-600 font-semibold text-lg"
+                            >
+                                ← Volver
+                            </button>
+
                             <div className="flex items-center gap-2 mb-2">
                                 <span className="text-3xl">{isCoffee ? '☕' : '🍫'}</span>
                                 <h2 className="text-2xl font-bold">{selectedMachine.name}</h2>
                             </div>
                             <p className="text-gray-600 mb-6">📍 {selectedMachine.location}</p>
 
-                            {/* PESTAÑAS - ahora son 5 */}
-                            <div className="grid grid-cols-3 gap-2 mb-6">
-                                {['restock','sales','cash','stats','visits'].map((tab, i) => {
-                                    const labels = ['🔧 Reposición','📊 Ventas','💰 Dinero','📈 Estadísticas','📋 Visitas'];
-                                    return (
-                                        <button key={tab} onClick={() => setActiveTab(tab)} className={`py-3 px-2 rounded-lg font-semibold text-sm ${activeTab === tab ? (isCoffee ? 'bg-gradient-to-r from-amber-500 to-amber-700 text-white shadow-lg' : 'bg-gradient-to-r from-blue-500 to-blue-700 text-white shadow-lg') : 'bg-white text-gray-600'}`}>
-                                            {labels[i]}
-                                        </button>
-                                    );
-                                })}
+                            <div className="grid grid-cols-2 gap-2 mb-6">
+                                <button
+                                    onClick={() => setActiveTab('restock')}
+                                    className={`py-3 px-2 rounded-lg font-semibold text-sm ${
+                                        activeTab === 'restock' 
+                                            ? isCoffee 
+                                                ? 'bg-gradient-to-r from-amber-500 to-amber-700 text-white shadow-lg'
+                                                : 'bg-gradient-to-r from-blue-500 to-blue-700 text-white shadow-lg'
+                                            : 'bg-white text-gray-600'
+                                    }`}
+                                >
+                                    🔧 Reposición
+                                </button>
+                                <button
+                                    onClick={() => setActiveTab('sales')}
+                                    className={`py-3 px-2 rounded-lg font-semibold text-sm ${
+                                        activeTab === 'sales' 
+                                            ? isCoffee 
+                                                ? 'bg-gradient-to-r from-amber-500 to-amber-700 text-white shadow-lg'
+                                                : 'bg-gradient-to-r from-blue-500 to-blue-700 text-white shadow-lg'
+                                            : 'bg-white text-gray-600'
+                                    }`}
+                                >
+                                    📊 Ventas
+                                </button>
+                                <button
+                                    onClick={() => setActiveTab('cash')}
+                                    className={`py-3 px-2 rounded-lg font-semibold text-sm ${
+                                        activeTab === 'cash' 
+                                            ? isCoffee 
+                                                ? 'bg-gradient-to-r from-amber-500 to-amber-700 text-white shadow-lg'
+                                                : 'bg-gradient-to-r from-blue-500 to-blue-700 text-white shadow-lg'
+                                            : 'bg-white text-gray-600'
+                                    }`}
+                                >
+                                    💰 Dinero
+                                </button>
+                                <button
+                                    onClick={() => setActiveTab('stats')}
+                                    className={`py-3 px-2 rounded-lg font-semibold text-sm ${
+                                        activeTab === 'stats' 
+                                            ? isCoffee 
+                                                ? 'bg-gradient-to-r from-amber-500 to-amber-700 text-white shadow-lg'
+                                                : 'bg-gradient-to-r from-blue-500 to-blue-700 text-white shadow-lg'
+                                            : 'bg-white text-gray-600'
+                                    }`}
+                                >
+                                    📈 Estadísticas
+                                </button>
                             </div>
 
-                            {/* TAB: REPOSICIÓN */}
                             {activeTab === 'restock' && (
                                 <>
-                                    <button onClick={() => setShowCashModal(true)} className="w-full bg-gradient-to-r from-green-500 to-emerald-500 text-white py-4 rounded-xl mb-4 font-bold text-lg shadow-lg">💸 Retirar/Meter Dinero</button>
-                                    {isCoffee && <button onClick={() => setShowCoffeeSalesModal(true)} className="w-full bg-gradient-to-r from-amber-500 to-amber-700 text-white py-4 rounded-xl mb-4 font-bold text-lg shadow-lg">☕ Registrar Recaudación</button>}
-                                    {!isCoffee && <button onClick={() => setShowAddProduct(true)} className="w-full bg-blue-600 text-white py-3 rounded-xl mb-4 font-semibold">+ Añadir Nuevo Producto</button>}
+                                    <button
+                                        onClick={() => setShowCashModal(true)}
+                                        className="w-full bg-gradient-to-r from-green-500 to-emerald-500 text-white py-4 rounded-xl mb-4 font-bold text-lg shadow-lg"
+                                    >
+                                        💸 Retirar/Meter Dinero
+                                    </button>
+
+                                    {isCoffee && (
+                                        <button
+                                            onClick={() => setShowCoffeeSalesModal(true)}
+                                            className="w-full bg-gradient-to-r from-amber-500 to-amber-700 text-white py-4 rounded-xl mb-4 font-bold text-lg shadow-lg"
+                                        >
+                                            ☕ Registrar Recaudación
+                                        </button>
+                                    )}
+
+                                    {!isCoffee && (
+                                        <button
+                                            onClick={() => setShowAddProduct(true)}
+                                            className="w-full bg-blue-600 text-white py-3 rounded-xl mb-4 font-semibold"
+                                        >
+                                            + Añadir Nuevo Producto
+                                        </button>
+                                    )}
+
                                     {showAddProduct && <AddProductForm />}
+
                                     <div className="space-y-3">
-                                        {isCoffee ? selectedMachine.products.map(product => <CoffeeProductCard key={product.id} product={product} />) : selectedMachine.products.map(product => {
-                                            const today = new Date();
-                                            const expiry = new Date(product.expiryDate);
-                                            const daysUntilExpiry = Math.ceil((expiry - today) / (1000 * 60 * 60 * 24));
-                                            const isExpired = product.expiryDate && daysUntilExpiry < 0;
-                                            const isExpiringSoon = product.expiryDate && daysUntilExpiry >= 0 && daysUntilExpiry <= 7;
-                                            const isLowStock = product.quantity < 5;
-                                            return (
-                                                <div key={product.id} className={`bg-white p-4 rounded-xl shadow-lg border-2 ${isExpired ? 'border-red-500 bg-red-50' : isExpiringSoon ? 'border-orange-400 bg-orange-50' : isLowStock ? 'border-yellow-400 bg-yellow-50' : 'border-gray-200'}`}>
-                                                    <div className="flex justify-between items-start mb-3">
-                                                        <div className="flex-1">
-                                                            <h4 className="font-bold text-lg">{product.name}</h4>
-                                                            <div className="flex gap-2 mt-1">
-                                                                {isExpired && <span className="text-xs bg-red-600 text-white px-2 py-1 rounded-full font-semibold">⚠️ CADUCADO</span>}
-                                                                {isExpiringSoon && !isExpired && <span className="text-xs bg-orange-500 text-white px-2 py-1 rounded-full font-semibold">⏰ Caduca en {daysUntilExpiry}d</span>}
-                                                                {isLowStock && <span className="text-xs bg-yellow-600 text-white px-2 py-1 rounded-full font-semibold">📦 Stock bajo</span>}
+                                        {isCoffee ? (
+                                            selectedMachine.products.map(product => (
+                                                <CoffeeProductCard key={product.id} product={product} />
+                                            ))
+                                        ) : (
+                                            selectedMachine.products.map(product => {
+                                                const today = new Date();
+                                                const expiry = new Date(product.expiryDate);
+                                                const daysUntilExpiry = Math.ceil((expiry - today) / (1000 * 60 * 60 * 24));
+                                                const isExpired = product.expiryDate && daysUntilExpiry < 0;
+                                                const isExpiringSoon = product.expiryDate && daysUntilExpiry >= 0 && daysUntilExpiry <= 7;
+                                                const isLowStock = product.quantity < 5;
+
+                                                return (
+                                                    <div 
+                                                        key={product.id} 
+                                                        className={`bg-white p-4 rounded-xl shadow-lg border-2 ${
+                                                            isExpired ? 'border-red-500 bg-red-50' : 
+                                                            isExpiringSoon ? 'border-orange-400 bg-orange-50' :
+                                                            isLowStock ? 'border-yellow-400 bg-yellow-50' : 'border-gray-200'
+                                                        }`}
+                                                    >
+                                                        <div className="flex justify-between items-start mb-3">
+                                                            <div className="flex-1">
+                                                                <h4 className="font-bold text-lg">{product.name}</h4>
+                                                                <div className="flex gap-2 mt-1">
+                                                                    {isExpired && <span className="text-xs bg-red-600 text-white px-2 py-1 rounded-full font-semibold">⚠️ CADUCADO</span>}
+                                                                    {isExpiringSoon && !isExpired && <span className="text-xs bg-orange-500 text-white px-2 py-1 rounded-full font-semibold">⏰ Caduca en {daysUntilExpiry}d</span>}
+                                                                    {isLowStock && <span className="text-xs bg-yellow-600 text-white px-2 py-1 rounded-full font-semibold">📦 Stock bajo</span>}
+                                                                </div>
+                                                            </div>
+                                                            <button
+                                                                onClick={() => deleteProduct(product.id)}
+                                                                className="text-red-500 text-xl ml-2"
+                                                            >
+                                                                🗑️
+                                                            </button>
+                                                        </div>
+
+                                                        <div className="grid grid-cols-2 gap-2 mb-3">
+                                                            <div className="bg-white p-2 rounded-lg border">
+                                                                <p className="text-xs text-gray-600 mb-1">Stock actual</p>
+                                                                <input
+                                                                    type="number"
+                                                                    step="1"
+                                                                    value={product.quantity}
+                                                                    onChange={(e) => quickUpdateProduct(product.id, 'quantity', e.target.value)}
+                                                                    className="w-full text-2xl font-bold text-center border-2 border-blue-300 rounded-lg p-1"
+                                                                />
+                                                            </div>
+                                                            <div className="bg-white p-2 rounded-lg border">
+                                                                <p className="text-xs text-gray-600 mb-1">Coste</p>
+                                                                <input
+                                                                    type="number"
+                                                                    step="0.01"
+                                                                    value={product.cost || 0}
+                                                                    onChange={(e) => quickUpdateProduct(product.id, 'cost', e.target.value)}
+                                                                    className="w-full text-2xl font-bold text-center border-2 border-green-300 rounded-lg p-1"
+                                                                />
                                                             </div>
                                                         </div>
-                                                        <button onClick={() => deleteProduct(product.id)} className="text-red-500 text-xl ml-2">🗑️</button>
-                                                    </div>
-                                                    <div className="grid grid-cols-2 gap-2 mb-3">
-                                                        <div className="bg-white p-2 rounded-lg border">
-                                                            <p className="text-xs text-gray-600 mb-1">Stock actual</p>
-                                                            <input type="number" step="1" value={product.quantity} onChange={(e) => quickUpdateProduct(product.id, 'quantity', e.target.value)} className="w-full text-2xl font-bold text-center border-2 border-blue-300 rounded-lg p-1" />
+
+                                                        <div className="grid grid-cols-3 gap-2 mb-3">
+                                                            <button
+                                                                onClick={() => addStock(product.id, 5)}
+                                                                className="bg-green-500 text-white py-2 rounded-lg font-bold text-lg"
+                                                            >
+                                                                +5
+                                                            </button>
+                                                            <button
+                                                                onClick={() => addStock(product.id, 10)}
+                                                                className="bg-green-600 text-white py-2 rounded-lg font-bold text-lg"
+                                                            >
+                                                                +10
+                                                            </button>
+                                                            <button
+                                                                onClick={() => {
+                                                                    const qty = prompt('¿Cuántos añadir?');
+                                                                    if (qty && parseInt(qty) > 0) {
+                                                                        addStock(product.id, parseInt(qty));
+                                                                    }
+                                                                }}
+                                                                className="bg-green-700 text-white py-2 rounded-lg font-bold"
+                                                            >
+                                                                +Otro
+                                                            </button>
                                                         </div>
-                                                        <div className="bg-white p-2 rounded-lg border">
-                                                            <p className="text-xs text-gray-600 mb-1">Coste</p>
-                                                            <input type="number" step="0.01" value={product.cost || 0} onChange={(e) => quickUpdateProduct(product.id, 'cost', e.target.value)} className="w-full text-2xl font-bold text-center border-2 border-green-300 rounded-lg p-1" />
+
+                                                        {product.expiryDate && (
+                                                            <div className="text-xs text-gray-600 mb-2">
+                                                                Caduca: {product.expiryDate}
+                                                            </div>
+                                                        )}
+
+                                                        <div className="grid grid-cols-2 gap-2">
+                                                            <button
+                                                                onClick={() => {
+                                                                    const qty = prompt('¿Cuántas unidades vendidas?');
+                                                                    if (qty && parseInt(qty) > 0) {
+                                                                        recordSale(product.id, parseInt(qty));
+                                                                    }
+                                                                }}
+                                                                className="bg-blue-600 text-white py-2 rounded-lg font-semibold"
+                                                            >
+                                                                💰 Vender
+                                                            </button>
+                                                            <button
+                                                                onClick={() => {
+                                                                    const qty = prompt('¿Cuántos productos caducados retirar?');
+                                                                    if (qty && parseInt(qty) > 0) {
+                                                                        removeExpired(product.id, parseInt(qty));
+                                                                    }
+                                                                }}
+                                                                className="bg-orange-500 text-white py-2 rounded-lg font-semibold"
+                                                            >
+                                                                🗑️ Caducados
+                                                            </button>
                                                         </div>
                                                     </div>
-                                                    <div className="grid grid-cols-3 gap-2 mb-3">
-                                                        <button onClick={() => addStock(product.id, 5)} className="bg-green-500 text-white py-2 rounded-lg font-bold text-lg">+5</button>
-                                                        <button onClick={() => addStock(product.id, 10)} className="bg-green-600 text-white py-2 rounded-lg font-bold text-lg">+10</button>
-                                                        <button onClick={() => { const qty = prompt('¿Cuántos añadir?'); if (qty && parseInt(qty) > 0) addStock(product.id, parseInt(qty)); }} className="bg-green-700 text-white py-2 rounded-lg font-bold">+Otro</button>
-                                                    </div>
-                                                    {product.expiryDate && <div className="text-xs text-gray-600 mb-2">Caduca: {product.expiryDate}</div>}
-                                                    <div className="grid grid-cols-2 gap-2">
-                                                        <button onClick={() => { const qty = prompt('¿Cuántas unidades vendidas?'); if (qty && parseInt(qty) > 0) recordSale(product.id, parseInt(qty)); }} className="bg-blue-600 text-white py-2 rounded-lg font-semibold">💰 Vender</button>
-                                                        <button onClick={() => { const qty = prompt('¿Cuántos productos caducados retirar?'); if (qty && parseInt(qty) > 0) removeExpired(product.id, parseInt(qty)); }} className="bg-orange-500 text-white py-2 rounded-lg font-semibold">🗑️ Caducados</button>
-                                                    </div>
-                                                </div>
-                                            );
-                                        })}
+                                                );
+                                            })
+                                        )}
                                     </div>
-                                    {selectedMachine.products.length === 0 && <div className="text-center text-gray-500 mt-8"><p className="text-4xl mb-2">📦</p><p>No hay productos. Añade el primero.</p></div>}
+
+                                    {selectedMachine.products.length === 0 && (
+                                        <div className="text-center text-gray-500 mt-8">
+                                            <p className="text-4xl mb-2">📦</p>
+                                            <p>No hay productos. Añade el primero.</p>
+                                        </div>
+                                    )}
                                 </>
                             )}
 
-                            {/* TAB: VENTAS */}
                             {activeTab === 'sales' && (
                                 <div className="space-y-3">
                                     {(selectedMachine.sales || []).slice().reverse().map(sale => (
                                         <div key={sale.id} className="bg-white p-4 rounded-lg shadow">
-                                            <h4 className="font-bold">{sale.productName}</h4>
-                                            {sale.isCoffeeSale ? (
-                                                <><p className="text-sm text-gray-600">Recaudación total: {sale.revenue.toFixed(2)}€</p><p className="text-xs text-green-600">Beneficio estimado: {sale.profit.toFixed(2)}€</p></>
-                                            ) : (
-                                                <><p className="text-sm text-gray-600">Cantidad: {sale.quantity} | Ingreso: {sale.revenue.toFixed(2)}€</p><p className="text-xs text-green-600">Beneficio: {sale.profit.toFixed(2)}€</p></>
-                                            )}
-                                            <p className="text-xs text-gray-400">{new Date(sale.date).toLocaleString('es-ES')}</p>
+                                            <div className="flex justify-between items-start">
+                                                <div>
+                                                    <h4 className="font-bold">{sale.productName}</h4>
+                                                    {sale.isCoffeeSale ? (
+                                                        <>
+                                                            <p className="text-sm text-gray-600">
+                                                                Recaudación total: {sale.revenue.toFixed(2)}€
+                                                            </p>
+                                                            <p className="text-xs text-green-600">
+                                                                Beneficio estimado: {sale.profit.toFixed(2)}€
+                                                            </p>
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <p className="text-sm text-gray-600">
+                                                                Cantidad: {sale.quantity} | Ingreso: {sale.revenue.toFixed(2)}€
+                                                            </p>
+                                                            <p className="text-xs text-green-600">
+                                                                Beneficio: {sale.profit.toFixed(2)}€
+                                                            </p>
+                                                        </>
+                                                    )}
+                                                    <p className="text-xs text-gray-400">
+                                                        {new Date(sale.date).toLocaleString('es-ES')}
+                                                    </p>
+                                                </div>
+                                            </div>
                                         </div>
                                     ))}
-                                    {(selectedMachine.sales || []).length === 0 && <div className="text-center text-gray-500 mt-8"><p className="text-4xl mb-2">💰</p><p>No hay ventas registradas</p></div>}
+                                    {(selectedMachine.sales || []).length === 0 && (
+                                        <div className="text-center text-gray-500 mt-8">
+                                            <p className="text-4xl mb-2">💰</p>
+                                            <p>No hay ventas registradas</p>
+                                        </div>
+                                    )}
                                 </div>
                             )}
 
-                            {/* TAB: DINERO */}
                             {activeTab === 'cash' && (
                                 <>
-                                    <div className={`${isCoffee ? 'bg-gradient-to-r from-amber-500 to-amber-600' : 'bg-gradient-to-r from-blue-500 to-blue-600'} text-white p-6 rounded-xl mb-4 shadow-lg`}>
+                                    <div className={`${
+                                        isCoffee 
+                                            ? 'bg-gradient-to-r from-amber-500 to-amber-600' 
+                                            : 'bg-gradient-to-r from-blue-500 to-blue-600'
+                                    } text-white p-6 rounded-xl mb-4 shadow-lg`}>
                                         <p className="text-sm opacity-90 mb-1">Dinero actual en máquina</p>
                                         <p className="text-4xl font-bold">{getCurrentCash(selectedMachine).toFixed(2)}€</p>
                                     </div>
-                                    <button onClick={() => setShowCashModal(true)} className={`w-full ${isCoffee ? 'bg-amber-600' : 'bg-blue-600'} text-white py-4 rounded-xl mb-4 font-bold`}>💸 Registrar Movimiento</button>
+
+                                    <button
+                                        onClick={() => setShowCashModal(true)}
+                                        className={`w-full ${
+                                            isCoffee ? 'bg-amber-600' : 'bg-blue-600'
+                                        } text-white py-4 rounded-xl mb-4 font-bold`}
+                                    >
+                                        💸 Registrar Movimiento
+                                    </button>
+
                                     <div className="space-y-3">
                                         {(selectedMachine.cashMovements || []).slice().reverse().map(mov => (
-                                            <div key={mov.id} className={`bg-white p-4 rounded-lg shadow border-l-4 ${mov.type === 'add' ? 'border-green-500' : 'border-red-500'}`}>
-                                                <h4 className="font-bold">{mov.type === 'add' ? '💰 Dinero metido' : '💸 Dinero retirado'}</h4>
-                                                <p className={`text-lg font-semibold ${mov.type === 'add' ? 'text-green-600' : 'text-red-600'}`}>{mov.type === 'add' ? '+' : '-'}{mov.amount.toFixed(2)}€</p>
-                                                <p className="text-xs text-gray-400 mt-1">{new Date(mov.date).toLocaleString('es-ES')}</p>
+                                            <div 
+                                                key={mov.id} 
+                                                className={`bg-white p-4 rounded-lg shadow border-l-4 ${
+                                                    mov.type === 'add' ? 'border-green-500' : 'border-red-500'
+                                                }`}
+                                            >
+                                                <div className="flex justify-between items-start">
+                                                    <div>
+                                                        <h4 className="font-bold">
+                                                            {mov.type === 'add' ? '💰 Dinero metido' : '💸 Dinero retirado'}
+                                                        </h4>
+                                                        <p className={`text-lg font-semibold ${
+                                                            mov.type === 'add' ? 'text-green-600' : 'text-red-600'
+                                                        }`}>
+                                                            {mov.type === 'add' ? '+' : '-'}{mov.amount.toFixed(2)}€
+                                                        </p>
+                                                        <p className="text-xs text-gray-400 mt-1">
+                                                            {new Date(mov.date).toLocaleString('es-ES')}
+                                                        </p>
+                                                    </div>
+                                                </div>
                                             </div>
                                         ))}
-                                        {(selectedMachine.cashMovements || []).length === 0 && <div className="text-center text-gray-500 mt-8"><p className="text-4xl mb-2">💵</p><p>No hay movimientos de dinero</p></div>}
+                                        {(selectedMachine.cashMovements || []).length === 0 && (
+                                            <div className="text-center text-gray-500 mt-8">
+                                                <p className="text-4xl mb-2">💵</p>
+                                                <p>No hay movimientos de dinero</p>
+                                            </div>
+                                        )}
                                     </div>
                                 </>
                             )}
 
-                            {/* TAB: ESTADÍSTICAS */}
                             {activeTab === 'stats' && (
                                 <div className="space-y-4">
                                     <div className="bg-white p-5 rounded-xl shadow">
                                         <h3 className="font-bold mb-4">Resumen Financiero</h3>
                                         <div className="space-y-3">
-                                            <div className="flex justify-between"><span className="text-gray-600">Total ventas:</span><span className="font-bold text-green-600">{getTotalRevenue(selectedMachine).toFixed(2)}€</span></div>
-                                            <div className="flex justify-between"><span className="text-gray-600">Beneficio total:</span><span className="font-bold text-emerald-600">{getTotalProfit(selectedMachine).toFixed(2)}€</span></div>
-                                            <div className="flex justify-between"><span className="text-gray-600">Número de ventas:</span><span className="font-bold text-blue-600">{(selectedMachine.sales || []).length}</span></div>
-                                            <div className="flex justify-between border-t pt-3"><span className="text-gray-600">Dinero en máquina:</span><span className="font-bold text-purple-600">{getCurrentCash(selectedMachine).toFixed(2)}€</span></div>
+                                            <div className="flex justify-between">
+                                                <span className="text-gray-600">Total ventas:</span>
+                                                <span className="font-bold text-green-600">
+                                                    {getTotalRevenue(selectedMachine).toFixed(2)}€
+                                                </span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-gray-600">Beneficio total:</span>
+                                                <span className="font-bold text-emerald-600">
+                                                    {getTotalProfit(selectedMachine).toFixed(2)}€
+                                                </span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-gray-600">Número de ventas:</span>
+                                                <span className="font-bold text-blue-600">
+                                                    {(selectedMachine.sales || []).length}
+                                                </span>
+                                            </div>
+                                            <div className="flex justify-between border-t pt-3">
+                                                <span className="text-gray-600">Dinero en máquina:</span>
+                                                <span className="font-bold text-purple-600">
+                                                    {getCurrentCash(selectedMachine).toFixed(2)}€
+                                                </span>
+                                            </div>
                                         </div>
                                     </div>
+
                                     {!isCoffee && (
                                         <div className="bg-white p-5 rounded-xl shadow">
                                             <h3 className="font-bold mb-4">Productos Caducados</h3>
                                             {(selectedMachine.expired || []).length > 0 ? (
-                                                <div className="space-y-2">{selectedMachine.expired.slice().reverse().map(exp => (<div key={exp.id} className="border-l-4 border-orange-500 pl-3 py-2"><p className="font-semibold">{exp.productName}</p><p className="text-sm text-gray-600">Cantidad retirada: {exp.quantity}</p><p className="text-xs text-gray-400">{new Date(exp.date).toLocaleString('es-ES')}</p></div>))}</div>
-                                            ) : <p className="text-gray-500 text-center">No hay productos caducados</p>}
+                                                <div className="space-y-2">
+                                                    {selectedMachine.expired.slice().reverse().map(exp => (
+                                                        <div key={exp.id} className="border-l-4 border-orange-500 pl-3 py-2">
+                                                            <p className="font-semibold">{exp.productName}</p>
+                                                            <p className="text-sm text-gray-600">
+                                                                Cantidad retirada: {exp.quantity}
+                                                            </p>
+                                                            <p className="text-xs text-gray-400">
+                                                                {new Date(exp.date).toLocaleString('es-ES')}
+                                                            </p>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <p className="text-gray-500 text-center">No hay productos caducados</p>
+                                            )}
                                         </div>
                                     )}
+
                                     {isCoffee && (
                                         <div className="bg-white p-5 rounded-xl shadow">
                                             <h3 className="font-bold mb-4">☕ Stock Actual</h3>
-                                            <div className="space-y-2">{selectedMachine.products.map(p => (<div key={p.id} className="flex justify-between items-center py-2 border-b"><span className="font-medium">{p.name}</span><span className="font-bold text-amber-600">{p.quantity.toFixed(1)} {p.unit}</span></div>))}</div>
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-
-                            {/* TAB: VISITAS ← NUEVO */}
-                            {activeTab === 'visits' && (
-                                <div>
-                                    <button
-                                        onClick={() => setShowVisitForm(!showVisitForm)}
-                                        className="w-full bg-gradient-to-r from-teal-500 to-emerald-600 text-white py-4 rounded-xl mb-4 font-bold text-lg shadow-lg"
-                                    >
-                                        📋 + Nueva Visita
-                                    </button>
-
-                                    {showVisitForm && (
-                                        <div className="bg-white rounded-xl p-5 mb-4 shadow-xl border border-teal-100">
-                                            <h3 className="font-bold text-lg mb-4 text-teal-900">Registrar Visita</h3>
-                                            <div className="space-y-3">
-                                                <div>
-                                                    <label className="block text-sm font-semibold mb-1 text-gray-700">Fecha</label>
-                                                    <input type="date" value={visitDate} onChange={(e) => setVisitDate(e.target.value)} className="w-full border-2 border-gray-200 rounded-lg p-3" />
-                                                </div>
-                                                <div>
-                                                    <label className="block text-sm font-semibold mb-1 text-gray-700">Destino / Motivo</label>
-                                                    <input value={visitDestination} onChange={(e) => setVisitDestination(e.target.value)} placeholder="Ej: Reposición, Revisión, Reparación..." className="w-full border-2 border-gray-200 rounded-lg p-3" />
-                                                </div>
-                                                <div>
-                                                    <label className="block text-sm font-semibold mb-1 text-gray-700">Notas (opcional)</label>
-                                                    <input value={visitNotes} onChange={(e) => setVisitNotes(e.target.value)} placeholder="Observaciones..." className="w-full border-2 border-gray-200 rounded-lg p-3" />
-                                                </div>
-                                            </div>
-                                            <div className="flex gap-2 mt-4">
-                                                <button onClick={addVisit} disabled={!visitDate || !visitDestination} className={`flex-1 py-3 rounded-lg font-semibold ${visitDate && visitDestination ? 'bg-teal-600 text-white' : 'bg-gray-300 text-gray-500 cursor-not-allowed'}`}>Guardar</button>
-                                                <button onClick={() => setShowVisitForm(false)} className="flex-1 bg-gray-400 text-white py-3 rounded-lg font-semibold">Cancelar</button>
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    {visits.length === 0 ? (
-                                        <div className="text-center text-gray-500 mt-8">
-                                            <p className="text-4xl mb-2">📋</p>
-                                            <p>No hay visitas registradas</p>
-                                        </div>
-                                    ) : (
-                                        <div className="space-y-3">
-                                            {visits.slice().reverse().map(visit => (
-                                                <div key={visit.id} className="bg-white p-4 rounded-xl shadow border-l-4 border-teal-500">
-                                                    <div className="flex justify-between items-start">
-                                                        <div>
-                                                            <p className="font-bold text-gray-900">📍 {visit.destination}</p>
-                                                            <p className="text-sm text-gray-500 mt-1">📅 {new Date(visit.date + 'T12:00:00').toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
-                                                            {visit.notes && <p className="text-sm text-gray-500 mt-1 bg-gray-50 p-2 rounded-lg">💬 {visit.notes}</p>}
-                                                        </div>
-                                                        <button onClick={() => deleteVisit(visit.id)} className="text-red-400 text-lg ml-2">🗑️</button>
+                                            <div className="space-y-2">
+                                                {selectedMachine.products.map(p => (
+                                                    <div key={p.id} className="flex justify-between items-center py-2 border-b">
+                                                        <span className="font-medium">{p.name}</span>
+                                                        <span className="font-bold text-amber-600">
+                                                            {p.quantity.toFixed(1)} {p.unit}
+                                                        </span>
                                                     </div>
-                                                </div>
-                                            ))}
+                                                ))}
+                                            </div>
                                         </div>
                                     )}
                                 </div>
                             )}
-
                         </div>
+
                         {showCashModal && <CashModal />}
                         {showCoffeeSalesModal && <CoffeeSalesModal />}
                     </div>
@@ -918,4 +1395,4 @@ ${(selectedMachine.sales||[]).slice(-10).reverse().map(s=>`<tr><td>${new Date(s.
         root.render(<VendingManager />);
     </script>
 </body>
-</html
+</html>
