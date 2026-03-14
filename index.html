@@ -83,11 +83,12 @@
                     cashMovements: [],
                     visits: [],
                     coffeePrices: type === 'coffee' ? {
-                        normal: 0.60,
-                        descafeinado: 0.60,
+                        normal: 0.70,
+                        descafeinado: 0.70,
                         conLeche: 0.70,
                         cortado: 0.70,
-                        chocolate: 0.80
+                        chocolate: 0.70
+                        Té: 0.70
                     } : null
                 };
                 saveData([...machines, newMachine]);
@@ -462,6 +463,7 @@
                     { name: 'Café Descafeinado', unit: 'kg' },
                     { name: 'Leche en Polvo', unit: 'kg' },
                     { name: 'Chocolate', unit: 'kg' },
+                    { name: 'Té', unit: 'kg' },
                     { name: 'Agua', unit: 'L' }
                 ];
                 const updatedMachines = machines.map(m => {
