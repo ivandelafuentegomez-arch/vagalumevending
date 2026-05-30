@@ -33,6 +33,8 @@
             const [showVisitModal, setShowVisitModal] = useState(false);
             const [showMaintenanceModal, setShowMaintenanceModal] = useState(false);
             const [activeTab, setActiveTab] = useState('restock');
+            const [searchQuery, setSearchQuery] = useState('');
+            const [sortOrder, setSortOrder] = useState(null); // null | 'expiry' | 'stock' | 'az'
 
             useEffect(() => {
                 const saved = localStorage.getItem('vending-machines');
@@ -974,13 +976,68 @@ ${(selectedMachine.expired||[]).slice(-10).reverse().map(e=>`<tr><td>${new Date(
 
                                     {showAddProduct && <AddProductForm />}
 
+                                    {!isCoffee && (
+                                        <div className="mb-4 space-y-2">
+                                            <div className="relative">
+                                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-lg">🔍</span>
+                                                <input
+                                                    type="text"
+                                                    value={searchQuery}
+                                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                                    placeholder="Buscar producto..."
+                                                    className="w-full border-2 border-blue-200 rounded-xl pl-10 pr-4 py-3 text-sm focus:outline-none focus:border-blue-500"
+                                                />
+                                                {searchQuery && (
+                                                    <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-lg">✕</button>
+                                                )}
+                                            </div>
+                                            <div className="flex gap-2">
+                                                <span className="text-xs font-semibold text-gray-500 self-center">Ordenar:</span>
+                                                <button
+                                                    onClick={() => setSortOrder(sortOrder === 'expiry' ? null : 'expiry')}
+                                                    className={`flex-1 py-2 px-2 rounded-lg text-xs font-semibold border-2 transition-colors ${sortOrder === 'expiry' ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-gray-600 border-gray-200'}`}
+                                                >⏰ Caducidad</button>
+                                                <button
+                                                    onClick={() => setSortOrder(sortOrder === 'stock' ? null : 'stock')}
+                                                    className={`flex-1 py-2 px-2 rounded-lg text-xs font-semibold border-2 transition-colors ${sortOrder === 'stock' ? 'bg-blue-500 text-white border-blue-500' : 'bg-white text-gray-600 border-gray-200'}`}
+                                                >📦 Stock</button>
+                                                <button
+                                                    onClick={() => setSortOrder(sortOrder === 'az' ? null : 'az')}
+                                                    className={`flex-1 py-2 px-2 rounded-lg text-xs font-semibold border-2 transition-colors ${sortOrder === 'az' ? 'bg-purple-500 text-white border-purple-500' : 'bg-white text-gray-600 border-gray-200'}`}
+                                                >🔤 A-Z</button>
+                                            </div>
+                                        </div>
+                                    )}
+
                                     <div className="space-y-3">
                                         {isCoffee ? (
                                             selectedMachine.products.map(product => (
                                                 <CoffeeProductCard key={product.id} product={product} />
                                             ))
                                         ) : (
-                                            selectedMachine.products.map(product => {
+                                            (() => {
+                                                let filteredProducts = selectedMachine.products;
+                                                if (searchQuery.trim()) {
+                                                    filteredProducts = filteredProducts.filter(p =>
+                                                        p.name.toLowerCase().includes(searchQuery.toLowerCase())
+                                                    );
+                                                }
+                                                if (sortOrder === 'az') {
+                                                    filteredProducts = [...filteredProducts].sort((a, b) => a.name.localeCompare(b.name, 'es'));
+                                                } else if (sortOrder === 'stock') {
+                                                    filteredProducts = [...filteredProducts].sort((a, b) => a.quantity - b.quantity);
+                                                } else if (sortOrder === 'expiry') {
+                                                    filteredProducts = [...filteredProducts].sort((a, b) => {
+                                                        const getEarliestExpiry = (p) => {
+                                                            const dates = (p.batches || []).map(b => b.expiryDate).filter(Boolean);
+                                                            if (dates.length === 0) return Infinity;
+                                                            return Math.min(...dates.map(d => new Date(d).getTime()));
+                                                        };
+                                                        return getEarliestExpiry(a) - getEarliestExpiry(b);
+                                                    });
+                                                }
+                                                return filteredProducts;
+                                            })().map(product => {
                                                 const today = new Date();
                                                 const batches = product.batches || [];
                                                 let hasExpiredBatch = false;
